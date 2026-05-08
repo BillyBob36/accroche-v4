@@ -25,6 +25,16 @@ public/.gen_status.json
 public/.tunnel.log
 .tunnel.log
 
+# Sorties brutes du pipeline (régénérables, lourdes — ~15 MB)
+public/crops/
+
+# Modèle YOLO non utilisé (ancienne version)
+yolo11n-seg.pt
+*.pt
+
+# Fichiers temporaires user
+public/debug.html
+
 # Sorties d'expérimentation locale (les modules sauvegardés sous public/scenes/
 # restent versionnés ; les sorties brutes du pipeline sont éphémères et lourdes,
 # elles seront régénérées quand on cliquera sur « Régénérer la scène »)

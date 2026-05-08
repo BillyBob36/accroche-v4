@@ -89,18 +89,21 @@ def prompt_c_default(subject: str) -> str:
         "skin tone, same clothing style and color. Match the lighting and creamy bokeh "
         "background style from the input image. Setting: same softly blurred boutique "
         "atmosphere, warm golden ambient light, shallow depth of field. Photorealistic, "
-        "high resolution, magazine-quality editorial portrait. Vertical portrait framing "
-        "showing the upper body. No watermark, no text, no logos."
+        "high resolution, magazine-quality editorial portrait. Compose the framing to fit "
+        "the canvas aspect ratio naturally — do not stretch or squash the subject. "
+        "No watermark, no text, no logos."
     )
 
 
 # Suffixe ajouté à un prompt_c personnalisé pour préserver l'identité et le style
-# graphique commun à l'ensemble des images du module.
+# graphique commun à l'ensemble des images du module. On précise explicitement
+# que le ratio du canvas doit être respecté pour éviter les écrasements.
 _PROMPT_C_GUARDRAILS = (
     " Preserve identity exactly: same face, same hair, same skin tone, same clothing"
     " style and color. Match the lighting and creamy bokeh background style from the"
     " input image. Photorealistic, high resolution, magazine-quality editorial portrait."
-    " Vertical portrait framing. No watermark, no text, no logos."
+    " Compose the framing to fit the canvas aspect ratio naturally — do not stretch"
+    " or squash the subject. No watermark, no text, no logos."
 )
 
 
@@ -215,14 +218,17 @@ def make_imageB(box: dict) -> Path:
 
 
 def make_imageC(box: dict) -> Path:
+    """Image C : reframe d'image B en plan américain face caméra.
+
+    On garde le RATIO de l'image B (donc le ratio du rect user dessiné par
+    l'utilisateur). Sinon GPT « écrase » le contenu pour le faire rentrer
+    dans un ratio fixe (par ex. 2:3), ce qui déforme le sujet.
+
+    Si image B est trop petite pour l'API gpt-image-2, on l'upscale Lanczos
+    AU MÊME RATIO vers une taille valide avant l'envoi. GPT renvoie au même
+    ratio → pas d'écrasement à l'affichage.
+    """
     box_id = str(box["id"])
-    # Image C est dérivée d'image B (qui est maintenant à la taille du rect
-    # user, potentiellement < min API). On va donc étendre encore via
-    # compute_gpt_crop pour que l'input soit valide pour GPT, puis ré-extraire
-    # à la fin. Mais comme image B est déjà JPEG sans contexte master autour,
-    # on adopte une approche plus simple : on UPSCALE image B au minimum API,
-    # on demande à GPT de reframe en 2:3, on garde la sortie à la taille 2:3
-    # (qui sera intrinsèquement >= min API).
     b_path = EXP3 / f"imageB/box-{box_id}.jpg"
     if not b_path.exists():
         b_path = EXP3 / f"imageB/box-{box_id}.png"
@@ -230,23 +236,27 @@ def make_imageC(box: dict) -> Path:
         raise RuntimeError(f"missing imageB for box {box_id}")
 
     out = EXP3 / f"imageC/box-{box_id}.jpg"
-    # Si imageB est trop petite pour l'API, on l'upscale Lanczos vers la
-    # taille 2:3 cible. GPT accepte l'image upscalée comme input.
-    target_w, target_h = snap_aspect(2, 3, target_pixels=SHOWCASE_TARGET_PIXELS)
+
     with Image.open(b_path) as bim:
         bw, bh = bim.size
-        if bw * bh < SHOWCASE_TARGET_PIXELS // 2 or max(bw, bh) < 800:
-            # Upscale d'abord pour donner à GPT plus de matière
-            tmp_path = EXP3 / f"imageB/box-{box_id}-up.png"
+
+    # Calcule la taille GPT en CONSERVANT le ratio de imageB.
+    target_w, target_h = snap_aspect(bw, bh, target_pixels=SHOWCASE_TARGET_PIXELS)
+
+    # Si imageB est sensiblement plus petite que la taille GPT cible,
+    # upscale Lanczos AU MÊME RATIO avant l'envoi.
+    input_for_c = b_path
+    tmp_path: Path | None = None
+    if bw * bh < target_w * target_h * 0.5 or max(bw, bh) < 800:
+        tmp_path = EXP3 / f"imageB/box-{box_id}-up.png"
+        with Image.open(b_path) as bim:
             bim.resize((target_w, target_h), Image.LANCZOS).save(tmp_path)
-            input_for_c = tmp_path
-        else:
-            input_for_c = b_path
+        input_for_c = tmp_path
 
     final_prompt = prompt_c(box.get("subject", ""), box.get("prompt_c"))
-    res = gpt_edit(input_for_c, final_prompt, out, f"{target_w}x{target_h}", "medium")
-    # Cleanup éventuel du fichier d'upscale
-    if input_for_c != b_path:
-        try: input_for_c.unlink()
+    res = gpt_edit(input_for_c, final_prompt, out,
+                   f"{target_w}x{target_h}", "medium")
+    if tmp_path:
+        try: tmp_path.unlink()
         except OSError: pass
     return res

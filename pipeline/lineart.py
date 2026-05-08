@@ -26,29 +26,27 @@ import numpy as np
 from PIL import Image
 
 # pipeline/ is on sys.path when invoked through full.py / regen_box.py / server.py
-from _size_utils import snap_aspect, parse_aspect_label  # noqa: E402
+from _size_utils import snap_aspect, parse_aspect_label, compute_gpt_crop, MIN_PIXELS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 EDIT_SCRIPT = Path(__file__).resolve().parent / "_imagegen" / "edit.py"
 
-# Lineart input pool: smaller resolution to keep skeleton post-processing fast.
+# Lineart input pool: petit pour garder la skeletonization rapide.
 LINEART_TARGET_PIXELS = 1_500_000
 LINEART_MAX_LONG = 1536
 
 
-def _lineart_size_for_box(box: dict) -> tuple[int, int]:
-    """Pick a valid gpt-image-2 size from the box's actual aspect.
-
-    Uses the box's real w/h (so 'free'-form boxes work too). Falls back to the
-    aspect label only if w/h is missing.
-    """
-    w = float(box.get("w") or 0)
-    h = float(box.get("h") or 0)
-    if w <= 0 or h <= 0:
-        parsed = parse_aspect_label(box.get("aspect", "")) or (2, 3)
-        w, h = parsed
-    return snap_aspect(w, h, target_pixels=LINEART_TARGET_PIXELS,
-                       max_long=LINEART_MAX_LONG)
+def _gpt_crop_for_box(box: dict, master_w: int, master_h: int):
+    """Calcule la zone master à envoyer à GPT pour ce box.
+    Si le rect user est plus petit que le min API, étend autour.
+    Renvoie (gx, gy, gw, gh, rx_in_g, ry_in_g) où (rx_in_g, ry_in_g) est la
+    position du rect user à l'intérieur du crop GPT (en pixels)."""
+    rx = int(round(float(box["x"])))
+    ry = int(round(float(box["y"])))
+    rw = int(round(float(box["w"])))
+    rh = int(round(float(box["h"])))
+    gx, gy, gw, gh = compute_gpt_crop(rx, ry, rw, rh, master_w, master_h)
+    return gx, gy, gw, gh, rx - gx, ry - gy, rw, rh
 
 # Drawing color — chosen to be unlikely to appear in boutique photos (no skin/cloth/wood
 # is naturally pure magenta) so we can reliably detect it via image differencing.
@@ -82,26 +80,55 @@ def build_prompt(subject: str) -> str:
 
 
 def extract_box_input(box: dict) -> tuple[Path, dict]:
-    bx, by = float(box["x"]), float(box["y"])
-    bw, bh = float(box["w"]), float(box["h"])
-    aspect = box.get("aspect", "2:3")
-    target_w, target_h = _lineart_size_for_box(box)
+    """Extrait du master un crop ÉLARGI (>= 655 360 px) qui contient le rect
+    logique du user. Le rect user peut être tout petit ; le crop élargi
+    permet de respecter les contraintes API gpt-image-2 sans déformer.
 
-    # Master may be JPEG (default) or PNG (legacy / pre-conversion).
+    Sauvegarde geom avec :
+      - `crop_in_master`  : le rect user (zone qui sera utilisée dans le master)
+      - `gpt_crop`        : le crop élargi envoyé à GPT
+      - `rect_in_gpt`     : position du rect user dans le crop GPT
+    """
+    box_id = str(box["id"])
+    aspect = box.get("aspect", "free")
+
     master_path = ROOT / "public/master.jpg"
     if not master_path.exists():
         master_path = ROOT / "public/master.png"
     master = Image.open(master_path).convert("RGB")
-    crop = master.crop((bx, by, bx + bw, by + bh)).resize((target_w, target_h), Image.LANCZOS)
+    master_w, master_h = master.size
 
-    box_id = str(box["id"])
+    gx, gy, gw, gh, rx_in_g, ry_in_g, rw, rh = _gpt_crop_for_box(box, master_w, master_h)
+
+    # Si le crop élargi dépasse encore la cible "lineart" en pixels (1.5M),
+    # on resize le crop à la baisse en gardant le ratio. Sinon on utilise
+    # la taille brute (déjà multiples de 16, déjà valide API).
+    crop = master.crop((gx, gy, gx + gw, gy + gh))
+    target_w, target_h = gw, gh
+    if gw * gh > LINEART_TARGET_PIXELS or max(gw, gh) > LINEART_MAX_LONG:
+        target_w, target_h = snap_aspect(
+            gw, gh, target_pixels=LINEART_TARGET_PIXELS, max_long=LINEART_MAX_LONG
+        )
+        crop = crop.resize((target_w, target_h), Image.LANCZOS)
+
+    # Échelle entre le crop master (gw, gh) et l'image envoyée à GPT.
+    # Sert à reprojeter (rx_in_g, ry_in_g, rw, rh) dans l'espace GPT.
+    sx = target_w / gw
+    sy = target_h / gh
+    rect_in_gpt = {
+        "x": int(round(rx_in_g * sx)),
+        "y": int(round(ry_in_g * sy)),
+        "w": int(round(rw * sx)),
+        "h": int(round(rh * sy)),
+    }
+
     out = ROOT / f"public/crops/box-{box_id}-input.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     crop.save(out)
     if not out.exists() or out.stat().st_size == 0:
         raise RuntimeError(
             f"extract_box_input: failed to write {out} "
-            f"(box id={box_id}, master_crop={(bx, by, bw, bh)}, "
+            f"(box id={box_id}, gpt_crop=({gx},{gy},{gw},{gh}), "
             f"target_size=({target_w}, {target_h}))"
         )
 
@@ -109,20 +136,37 @@ def extract_box_input(box: dict) -> tuple[Path, dict]:
         "id": box_id,
         "subject": box.get("subject", ""),
         "aspect": aspect,
-        "crop_in_master": {"x": round(bx, 2), "y": round(by, 2),
-                           "w": round(bw, 2), "h": round(bh, 2)},
+        # Le rect user — la zone qu'on placera dans le master à la fin.
+        "crop_in_master": {"x": float(box["x"]), "y": float(box["y"]),
+                           "w": float(box["w"]), "h": float(box["h"])},
+        # Le crop élargi envoyé à GPT.
+        "gpt_crop_in_master": {"x": gx, "y": gy, "w": gw, "h": gh},
+        # Position du rect user dans le crop GPT (en pixels du crop, après resize).
+        "rect_in_gpt": rect_in_gpt,
         "target_size": {"w": target_w, "h": target_h},
     }
     (out.parent / f"box-{box_id}-geom.json").write_text(
         json.dumps(geom, indent=2), encoding="utf-8"
     )
-    print(f"[1/{box_id}] crop ({int(bx)},{int(by)}, {int(bw)}x{int(bh)}) -> {target_w}x{target_h}", flush=True)
+    print(f"[1/{box_id}] rect user=({int(box['x'])},{int(box['y'])},{int(box['w'])}x{int(box['h'])}) "
+          f"-> gpt-crop=({gx},{gy},{gw}x{gh}) @ {target_w}x{target_h}", flush=True)
     return out, geom
+
+
+def _load_geom(box_id: str) -> dict:
+    p = ROOT / f"public/crops/box-{box_id}-geom.json"
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def run_gpt_lineart(box: dict, crop_path: Path) -> Path:
     box_id = str(box["id"])
-    tw, th = _lineart_size_for_box(box)
+    # On lit la taille réelle de l'input crop (déjà multiples de 16, déjà
+    # valide API grâce à compute_gpt_crop dans extract_box_input).
+    if crop_path.exists():
+        with Image.open(crop_path) as im:
+            tw, th = im.size
+    else:
+        tw, th = 1024, 1024  # fallback (jamais censé arriver)
 
     if not crop_path.exists():
         raise RuntimeError(
@@ -182,13 +226,29 @@ def extract_lines_from_overlay(box: dict) -> Path:
     score = diff[..., 0] - diff[..., 1] + diff[..., 2]  # shift toward (255,0,255)
     is_drawn = score > EXTRACT_THRESHOLD
 
-    h, w = is_drawn.shape
-    out = np.full((h, w), 255, dtype=np.uint8)
-    out[is_drawn] = 0
+    h_full, w_full = is_drawn.shape
+    out_full = np.full((h_full, w_full), 255, dtype=np.uint8)
+    out_full[is_drawn] = 0
+
+    # Si le geom contient `rect_in_gpt`, on extrait la sous-zone qui
+    # correspond au rect user — c'est ce qui sera squelettisé. Le contour
+    # GPT en dehors du rect user est ignoré (c'est du contexte ajouté pour
+    # respecter la taille minimum de l'API, pas le sujet utile).
+    geom = _load_geom(box_id)
+    rig = geom.get("rect_in_gpt")
+    if rig and rig.get("w") and rig.get("h"):
+        x1, y1 = rig["x"], rig["y"]
+        x2, y2 = x1 + rig["w"], y1 + rig["h"]
+        x1 = max(0, min(w_full, x1)); x2 = max(0, min(w_full, x2))
+        y1 = max(0, min(h_full, y1)); y2 = max(0, min(h_full, y2))
+        out = out_full[y1:y2, x1:x2]
+    else:
+        out = out_full
     Image.fromarray(out, "L").save(line_path)
-    drawn = int(is_drawn.sum())
-    pct = drawn / is_drawn.size * 100
-    print(f"[2.5/{box_id}] extracted {drawn} drawn px ({pct:.2f}%) -> {line_path.name}", flush=True)
+    drawn = int((out == 0).sum())
+    pct = drawn / max(1, out.size) * 100
+    print(f"[2.5/{box_id}] extracted {drawn} drawn px ({pct:.2f}%) "
+          f"in rect {out.shape[1]}x{out.shape[0]} -> {line_path.name}", flush=True)
     return line_path
 
 

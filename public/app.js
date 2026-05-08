@@ -1560,18 +1560,18 @@ function refreshQuestsOverview() { /* no-op — gardé pour compat */ }
 //      résultat avec l'original (feather sur le mask) et recolle le crop dans
 //      le master.jpg sans jointure visible.
 
-// Contraintes gpt-image-2 (vérifiées dans le skill image-gen-azure) :
-//   - W et H multiples de 16
-//   - max(W, H) <= 3840
-//   - max(W,H) / min(W,H) <= 3
-//   - W * H ∈ [655_360 ; 8_294_400]
-// Le clamp garantit ces 4 contraintes À TOUT MOMENT, en agrandissant
-// proportionnellement (donc SANS déformation) si nécessaire.
+// Le CLAMP CÔTÉ FRONTEND ne fait QUE :
+//   - snap multiples de 16 (pour cohérence visuelle + simplicité backend)
+//   - ratio ≤ 3:1 (toujours imposé car l'API le rejette même côté serveur)
+//   - longueur min 64 px par côté (pour qu'on puisse encore voir/cliquer)
+// La contrainte gpt-image-2 du minimum 655 360 pixels n'est PAS appliquée
+// ici : c'est le backend qui élargit automatiquement le crop master autour
+// du rect avant l'envoi à GPT, puis re-extrait la sous-zone du rect user à
+// la sortie. Tu peux donc tracer un rect aussi petit que 64×64 sans soucis.
 const SNAP = 16;
-const MIN_PIXELS = 655_360;
-const MAX_PIXELS = 8_294_400;
-const MAX_LONG = 3840;
-const MAX_RATIO_CHAR = 3.0;
+const MIN_RECT_SIDE = 64;       // limite UX : plus petit qu'1 doigt c'est inutile
+const MAX_LONG = 3840;          // contrainte API gpt-image-2 (long edge max)
+const MAX_RATIO_CHAR = 3.0;     // contrainte API (ratio max)
 
 const charState = {
   rect: null,         // {x,y,w,h} en master coords (toujours snappés à 16)
@@ -1690,59 +1690,33 @@ document.addEventListener('mouseup', () => {
   }
 });
 
-function ceil16(v) { return Math.max(SNAP, Math.ceil(v / SNAP) * SNAP); }
+function snap16up(v) { return Math.max(SNAP, Math.ceil(v / SNAP) * SNAP); }
 
 function clampCharRect(x, y, w, h) {
-  // Garde minimale : un clic isolé (w/h ~0) doit produire un cadre valide.
-  if (w < 4) w = 256;
-  if (h < 4) h = 256;
+  // Garde minimale UX : pas plus petit qu'on peut cliquer.
+  if (w < MIN_RECT_SIDE) w = MIN_RECT_SIDE;
+  if (h < MIN_RECT_SIDE) h = MIN_RECT_SIDE;
 
-  // 1. Ratio ≤ 3:1 (clamp dans les deux directions, en RÉDUISANT le côté long).
+  // 1. Ratio ≤ 3:1 (clamp en RÉDUISANT le côté long — pas de déformation).
   if (w > h * MAX_RATIO_CHAR) w = h * MAX_RATIO_CHAR;
   if (h > w * MAX_RATIO_CHAR) h = w * MAX_RATIO_CHAR;
 
-  // 2. Long edge ≤ MAX_LONG, en réduisant proportionnellement.
+  // 2. Long edge ≤ MAX_LONG (contrainte API gpt-image-2).
   const longEdge = Math.max(w, h);
   if (longEdge > MAX_LONG) {
     const f = MAX_LONG / longEdge;
     w *= f; h *= f;
   }
 
-  // 3. Total pixels ≤ MAX_PIXELS (réduction proportionnelle).
-  if (w * h > MAX_PIXELS) {
-    const f = Math.sqrt(MAX_PIXELS / (w * h));
-    w *= f; h *= f;
-  }
-
-  // 4. Total pixels ≥ MIN_PIXELS — c'est ICI qu'on grandit, en préservant le
-  //    ratio (donc sans aucune déformation), pour que le cadre soit toujours
-  //    accepté par gpt-image-2.
-  if (w * h < MIN_PIXELS) {
-    const f = Math.sqrt(MIN_PIXELS / (w * h));
-    w *= f; h *= f;
-  }
-
-  // 5. Cap par les bornes du master (peut nous re-faire passer sous MIN_PIXELS
-  //    si le master est très petit ; à ce stade c'est le mieux possible).
+  // 3. Cap par les bornes du master.
   if (w > MASTER_W) { const f = MASTER_W / w; w *= f; h *= f; }
   if (h > MASTER_H) { const f = MASTER_H / h; w *= f; h *= f; }
 
-  // 6. Snap à 16 — ARRONDI VERS LE HAUT pour préserver le seuil min.
-  w = Math.min(MASTER_W, ceil16(w));
-  h = Math.min(MASTER_H, ceil16(h));
+  // 4. Snap multiples de 16 (vers le haut pour ne pas redescendre sous le min).
+  w = Math.min(MASTER_W, snap16up(w));
+  h = Math.min(MASTER_H, snap16up(h));
 
-  // 7. Si le snap nous a remis sous MIN_PIXELS (rare, p.ex. après cap master),
-  //    on grossit du côté qui a le plus de marge, par paliers de 16.
-  let safety = 0;
-  while (w * h < MIN_PIXELS && safety++ < 64) {
-    const marginW = MASTER_W - w, marginH = MASTER_H - h;
-    if (w <= h && marginW >= SNAP) w += SNAP;
-    else if (marginH >= SNAP) h += SNAP;
-    else if (marginW >= SNAP) w += SNAP;
-    else break;
-  }
-
-  // 8. Position : snap + clamp aux bornes (le rect doit tenir dans le master).
+  // 5. Position : snap + clamp aux bornes (le rect doit tenir dans le master).
   let nx = Math.max(0, snap16(x));
   let ny = Math.max(0, snap16(y));
   if (nx + w > MASTER_W) nx = Math.max(0, snap16(MASTER_W - w));

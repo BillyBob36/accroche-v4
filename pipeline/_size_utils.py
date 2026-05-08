@@ -110,6 +110,110 @@ def snap_size_string(aspect_w: float, aspect_h: float, **kwargs) -> str:
     return f"{w}x{h}"
 
 
+def compute_gpt_crop(rx: int, ry: int, rw: int, rh: int,
+                     master_w: int, master_h: int,
+                     min_pixels: int = MIN_PIXELS,
+                     max_long: int = MAX_LONG) -> tuple[int, int, int, int]:
+    """Calcule un crop master à envoyer à GPT, qui CONTIENT le rect logique
+    `(rx, ry, rw, rh)` et qui respecte les contraintes gpt-image-2.
+
+    Si `(rw, rh)` est déjà valide (≥ min_pixels, multiples de 16, etc.), on
+    renvoie le rect tel quel. Sinon on ÉTEND autour du rect (en gardant le
+    rect au centre quand possible) jusqu'à atteindre la taille minimum.
+
+    Renvoie `(gx, gy, gw, gh)` : le crop à découper dans le master. Le rect
+    logique se retrouvera à la position `(rx - gx, ry - gy, rw, rh)` dans le
+    crop, ce qui permet d'extraire la sous-zone d'origine après inférence.
+    """
+    if rw < STEP or rh < STEP:
+        rw = max(rw, STEP); rh = max(rh, STEP)
+
+    # 1. On veut une taille (gw, gh) qui :
+    #    - garde le ratio rw/rh
+    #    - a gw*gh >= min_pixels
+    #    - long edge <= max_long
+    #    - ratio <= MAX_RATIO (3)
+    ratio = rw / rh
+    if ratio > MAX_RATIO:
+        ratio = MAX_RATIO
+        rw_eff = rh * MAX_RATIO
+        rh_eff = rh
+    elif 1 / ratio > MAX_RATIO:
+        ratio = 1 / MAX_RATIO
+        rw_eff = rw
+        rh_eff = rw * MAX_RATIO
+    else:
+        rw_eff, rh_eff = rw, rh
+
+    # Calcule le facteur d'agrandissement pour atteindre min_pixels exactement.
+    needed = max(1.0, min_pixels / max(1, rw_eff * rh_eff))
+    scale = needed ** 0.5
+    gw = rw_eff * scale
+    gh = rh_eff * scale
+
+    # Cap long edge.
+    long_edge = max(gw, gh)
+    if long_edge > max_long:
+        f = max_long / long_edge
+        gw *= f; gh *= f
+
+    # Cap par le master (le crop doit tenir dans le master).
+    if gw > master_w:
+        f = master_w / gw
+        gw *= f; gh *= f
+    if gh > master_h:
+        f = master_h / gh
+        gw *= f; gh *= f
+
+    # Snap multiples de 16, vers le haut pour rester >= min_pixels.
+    gw = max(STEP, ((int(round(gw)) + STEP - 1) // STEP) * STEP)
+    gh = max(STEP, ((int(round(gh)) + STEP - 1) // STEP) * STEP)
+    gw = min(gw, master_w - (master_w % STEP) if master_w % STEP else master_w)
+    gh = min(gh, master_h - (master_h % STEP) if master_h % STEP else master_h)
+
+    # Si le snap nous a remis juste sous min_pixels, on agrandit du côté qui a
+    # le plus de marge dans le master.
+    safety = 0
+    while gw * gh < min_pixels and safety < 32:
+        safety += 1
+        margin_w = master_w - gw
+        margin_h = master_h - gh
+        if gw <= gh and margin_w >= STEP:
+            gw += STEP
+        elif margin_h >= STEP:
+            gh += STEP
+        elif margin_w >= STEP:
+            gw += STEP
+        else:
+            break
+
+    # 2. Position du crop : centre autour du rect logique, puis clamp.
+    cx = rx + rw / 2
+    cy = ry + rh / 2
+    gx = int(round(cx - gw / 2))
+    gy = int(round(cy - gh / 2))
+
+    # Clamp dans le master, en gardant gw/gh constants. Snap de la position
+    # à 16 px aussi (utile pour PIL.crop sur un crop d'image PIL — pas
+    # vraiment requis, mais cohérent).
+    gx = max(0, min(gx, master_w - gw))
+    gy = max(0, min(gy, master_h - gh))
+
+    # Si le rect logique dépasse encore les bords du crop (cas extrême : rect
+    # collé contre un bord du master + crop élargi mais master petit), on
+    # essaye d'aligner le crop sur le bord.
+    if rx < gx:
+        gx = max(0, rx)
+    if ry < gy:
+        gy = max(0, ry)
+    if rx + rw > gx + gw:
+        gx = max(0, min(master_w - gw, rx + rw - gw))
+    if ry + rh > gy + gh:
+        gy = max(0, min(master_h - gh, ry + rh - gh))
+
+    return gx, gy, gw, gh
+
+
 def parse_aspect_label(label: str) -> tuple[float, float] | None:
     """Parse a human-readable aspect ratio like '2:3' or '16:9'. Returns None
     for unknown labels (including 'free')."""

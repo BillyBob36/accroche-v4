@@ -10,6 +10,7 @@ Outputs:
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -151,28 +152,101 @@ def gpt_edit(image_path: Path, prompt: str, output_path: Path,
     return Path(res.stdout.strip().splitlines()[-1])
 
 
+def _load_geom(box_id: str) -> dict:
+    p = ROOT / f"public/crops/box-{box_id}-geom.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _extract_rect_subimage(full_img_path: Path, box_id: str) -> Image.Image | None:
+    """Si le geom contient `rect_in_gpt`, extrait du résultat GPT la sous-zone
+    correspondant au rect user. Sinon renvoie None (on garde l'image entière)."""
+    geom = _load_geom(box_id)
+    rig = geom.get("rect_in_gpt")
+    if not rig or not rig.get("w") or not rig.get("h"):
+        return None
+    full = Image.open(full_img_path).convert("RGB")
+    fw, fh = full.size
+    # Le geom a été calculé pour le crop input ; si GPT renvoie une taille
+    # différente, on rescale la position au prorata.
+    geom_w = (geom.get("target_size") or {}).get("w") or fw
+    geom_h = (geom.get("target_size") or {}).get("h") or fh
+    sx = fw / geom_w
+    sy = fh / geom_h
+    x1 = max(0, int(round(rig["x"] * sx)))
+    y1 = max(0, int(round(rig["y"] * sy)))
+    x2 = min(fw, int(round((rig["x"] + rig["w"]) * sx)))
+    y2 = min(fh, int(round((rig["y"] + rig["h"]) * sy)))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return full.crop((x1, y1, x2, y2))
+
+
 def make_imageB(box: dict) -> Path:
     box_id = str(box["id"])
-    tw, th = _showcase_size_for_box(box)
-    # Reuse the lineart's input crop (still PNG, kept as PNG because lineart
-    # post-processes it via image differencing — needs lossless input).
     crop_path = ROOT / f"public/crops/box-{box_id}-input.png"
     if not crop_path.exists():
         raise RuntimeError(f"missing input crop {crop_path} — run lineart first")
-    out = EXP3 / f"imageB/box-{box_id}.jpg"
-    return gpt_edit(crop_path, prompt_b(box.get("subject", "")), out, f"{tw}x{th}", "medium")
+    # On envoie le crop ÉLARGI à GPT (taille déjà valide API, calculée par
+    # extract_box_input via compute_gpt_crop). Pas besoin de spécifier la
+    # taille manuellement — on lit celle du fichier.
+    with Image.open(crop_path) as im:
+        tw, th = im.size
+    # Sortie temporaire (pleine taille GPT)
+    raw_out = EXP3 / f"imageB/box-{box_id}-raw.jpg"
+    gpt_edit(crop_path, prompt_b(box.get("subject", "")),
+             raw_out, f"{tw}x{th}", "medium")
+    # Extrait la sous-zone qui correspond au rect user (logique).
+    final_out = EXP3 / f"imageB/box-{box_id}.jpg"
+    sub = _extract_rect_subimage(raw_out, box_id)
+    if sub is not None:
+        final_out.parent.mkdir(parents=True, exist_ok=True)
+        sub.save(final_out, "JPEG", quality=88, optimize=True)
+        try: raw_out.unlink()
+        except OSError: pass
+    else:
+        # Pas de geom / pas de sous-zone : on garde l'image GPT telle quelle.
+        raw_out.rename(final_out)
+    return final_out
 
 
 def make_imageC(box: dict) -> Path:
     box_id = str(box["id"])
-    # Image C is derived from image B; we look it up regardless of extension.
+    # Image C est dérivée d'image B (qui est maintenant à la taille du rect
+    # user, potentiellement < min API). On va donc étendre encore via
+    # compute_gpt_crop pour que l'input soit valide pour GPT, puis ré-extraire
+    # à la fin. Mais comme image B est déjà JPEG sans contexte master autour,
+    # on adopte une approche plus simple : on UPSCALE image B au minimum API,
+    # on demande à GPT de reframe en 2:3, on garde la sortie à la taille 2:3
+    # (qui sera intrinsèquement >= min API).
     b_path = EXP3 / f"imageB/box-{box_id}.jpg"
     if not b_path.exists():
         b_path = EXP3 / f"imageB/box-{box_id}.png"
+    if not b_path.exists():
+        raise RuntimeError(f"missing imageB for box {box_id}")
+
     out = EXP3 / f"imageC/box-{box_id}.jpg"
-    # Image C : portrait américain. On utilise le prompt_c personnalisé du
-    # cadre s'il est fourni (panneau de cadre dans l'éditeur), sinon le prompt
-    # par défaut (face caméra, expression chaleureuse).
-    tw, th = snap_aspect(2, 3, target_pixels=SHOWCASE_TARGET_PIXELS)
+    # Si imageB est trop petite pour l'API, on l'upscale Lanczos vers la
+    # taille 2:3 cible. GPT accepte l'image upscalée comme input.
+    target_w, target_h = snap_aspect(2, 3, target_pixels=SHOWCASE_TARGET_PIXELS)
+    with Image.open(b_path) as bim:
+        bw, bh = bim.size
+        if bw * bh < SHOWCASE_TARGET_PIXELS // 2 or max(bw, bh) < 800:
+            # Upscale d'abord pour donner à GPT plus de matière
+            tmp_path = EXP3 / f"imageB/box-{box_id}-up.png"
+            bim.resize((target_w, target_h), Image.LANCZOS).save(tmp_path)
+            input_for_c = tmp_path
+        else:
+            input_for_c = b_path
+
     final_prompt = prompt_c(box.get("subject", ""), box.get("prompt_c"))
-    return gpt_edit(b_path, final_prompt, out, f"{tw}x{th}", "medium")
+    res = gpt_edit(input_for_c, final_prompt, out, f"{target_w}x{target_h}", "medium")
+    # Cleanup éventuel du fichier d'upscale
+    if input_for_c != b_path:
+        try: input_for_c.unlink()
+        except OSError: pass
+    return res

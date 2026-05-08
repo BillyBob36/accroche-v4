@@ -31,6 +31,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 
+# pipeline/ est sur sys.path quand on est invoqué via server.py
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _size_utils import compute_gpt_crop, MIN_PIXELS, MAX_PIXELS  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 EDIT_SCRIPT = Path(__file__).resolve().parent / "_imagegen" / "edit.py"
 PUBLIC = ROOT / "public"
@@ -41,8 +45,9 @@ MASTER_PATH = PUBLIC / "master.jpg"
 FEATHER_RADIUS_PX = 6
 
 
-def _validate_rect(rect: dict, master_w: int, master_h: int) -> dict:
-    """Vérifie que (x, y, w, h) respecte les contraintes gpt-image-2."""
+def _validate_rect_user(rect: dict, master_w: int, master_h: int) -> dict:
+    """Vérifie le rect USER (peut être plus petit que le min API — c'est OK,
+    on l'élargit dans compute_gpt_crop)."""
     x, y, w, h = int(rect["x"]), int(rect["y"]), int(rect["w"]), int(rect["h"])
     if x < 0 or y < 0 or w <= 0 or h <= 0:
         raise ValueError(f"rect invalide : {rect}")
@@ -50,15 +55,8 @@ def _validate_rect(rect: dict, master_w: int, master_h: int) -> dict:
         raise ValueError(f"rect dépasse le master : {rect}")
     if w % 16 or h % 16:
         raise ValueError(f"rect doit être multiple de 16 : {w}×{h}")
-    if max(w, h) > 3840:
-        raise ValueError(f"long edge trop grand : {max(w, h)}")
-    if max(w, h) / min(w, h) > 3.0:
+    if max(w, h) / max(1, min(w, h)) > 3.0:
         raise ValueError(f"ratio > 3:1 : {w}×{h}")
-    px = w * h
-    if px < 655_360:
-        raise ValueError(f"trop peu de pixels ({px} < 655360). Agrandis le cadre.")
-    if px > 8_294_400:
-        raise ValueError(f"trop de pixels ({px} > 8294400). Réduis le cadre.")
     return {"x": x, "y": y, "w": w, "h": h}
 
 
@@ -120,44 +118,73 @@ def _invert_alpha_to_edit_mask(mask_png: Image.Image) -> Image.Image:
 
 
 def edit_master_zone(rect: dict, mask_png_path: Path, prompt: str) -> Path:
-    """Pipeline complet. Renvoie le chemin du master mis à jour."""
+    """Pipeline complet. Renvoie le chemin du master mis à jour.
+
+    Si le rect user est plus petit que le minimum gpt-image-2 (655 360 px),
+    on étend automatiquement la zone envoyée à GPT en incluant du contexte
+    master autour. Le mask GPT est étendu aussi : zones préservées partout
+    sauf à l'intérieur du rect user où on copie le mask user. Au retour, on
+    extrait juste la sous-zone correspondant au rect user → recollage propre
+    dans le master sans toucher aux pixels qui ne devaient pas l'être.
+    """
     if not MASTER_PATH.exists():
         raise RuntimeError(f"master introuvable : {MASTER_PATH}")
     master = Image.open(MASTER_PATH).convert("RGB")
-    rect = _validate_rect(rect, *master.size)
-    x, y, w, h = rect["x"], rect["y"], rect["w"], rect["h"]
+    master_w, master_h = master.size
+    rect = _validate_rect_user(rect, master_w, master_h)
+    rx, ry, rw, rh = rect["x"], rect["y"], rect["w"], rect["h"]
 
-    # 1. Extract le crop (sans resize : tailles déjà multiples de 16)
-    crop = master.crop((x, y, x + w, y + h))
+    # 1. Calcule le crop ÉLARGI à envoyer à GPT (>= 655 360 px, valide API).
+    gx, gy, gw, gh = compute_gpt_crop(rx, ry, rw, rh, master_w, master_h)
+    rx_in_g, ry_in_g = rx - gx, ry - gy
+    print(f"[char-edit] rect user=({rx},{ry},{rw}×{rh}) "
+          f"-> gpt-crop=({gx},{gy},{gw}×{gh})", flush=True)
 
-    # 2. Charge et vérifie le masque
-    mask = Image.open(mask_png_path).convert("RGBA")
-    if mask.size != (w, h):
-        # Le front l'a normalement créé à la bonne taille ; sinon on resize.
-        mask = mask.resize((w, h), Image.NEAREST)
+    # 2. Extract du master le crop élargi (pas de resize : déjà valide).
+    big_crop = master.crop((gx, gy, gx + gw, gy + gh))
 
-    # 3. Appel GPT
+    # 3. Charge le mask user (alpha=0 = à éditer dans le rect user).
+    user_mask = Image.open(mask_png_path).convert("RGBA")
+    if user_mask.size != (rw, rh):
+        user_mask = user_mask.resize((rw, rh), Image.NEAREST)
+
+    # 4. Construit le mask GPT à la taille du crop élargi :
+    #    - opaque PARTOUT (à préserver)
+    #    - dans la sous-zone du rect user, on copie le mask user
+    #      (alpha=0 dans la zone à éditer, alpha=255 ailleurs dans le rect)
+    big_mask = Image.new("RGBA", (gw, gh), (0, 0, 0, 255))
+    big_mask.paste(user_mask, (rx_in_g, ry_in_g), user_mask)
+
+    # 5. Appel GPT
     with tempfile.TemporaryDirectory() as tmp:
         crop_path = Path(tmp) / "crop.png"
-        gpt_mask_path = Path(tmp) / "mask.png"
-        gpt_out_path = Path(tmp) / "result.png"
-        crop.save(crop_path)
-        mask.save(gpt_mask_path)
-        size_str = f"{w}x{h}"
-        print(f"[char-edit] GPT edit on {size_str} crop at ({x},{y})…", flush=True)
-        result_path = _gpt_inpaint(crop_path, gpt_mask_path, prompt, size_str, gpt_out_path)
-        gpt_result = Image.open(result_path).convert("RGB")
-        if gpt_result.size != (w, h):
-            gpt_result = gpt_result.resize((w, h), Image.LANCZOS)
+        mask_path = Path(tmp) / "mask.png"
+        result_path_ = Path(tmp) / "result.png"
+        big_crop.save(crop_path)
+        big_mask.save(mask_path)
+        size_str = f"{gw}x{gh}"
+        print(f"[char-edit] GPT edit on {size_str}…", flush=True)
+        actual = _gpt_inpaint(crop_path, mask_path, prompt, size_str, result_path_)
+        gpt_result = Image.open(actual).convert("RGB")
+        if gpt_result.size != (gw, gh):
+            gpt_result = gpt_result.resize((gw, gh), Image.LANCZOS)
 
-        # 4. Compositing : ne change que la zone peinte par l'utilisateur
-        edit_alpha_mask = _invert_alpha_to_edit_mask(mask)
-        composited = _composite(crop, gpt_result, edit_alpha_mask)
+        # 6. Compositing sur le crop élargi : pixels édités où le user a peint,
+        #    pixels strictement préservés ailleurs (grâce au mask élargi avec
+        #    alpha=255 hors du rect user). Le mask passé pour le compositing
+        #    est l'inverse alpha (255 = à éditer).
+        edit_alpha_full = _invert_alpha_to_edit_mask(big_mask)
+        composited_full = _composite(big_crop, gpt_result, edit_alpha_full)
 
-    # 5. Recolle dans le master et sauve (JPEG q=85)
-    master.paste(composited, (x, y))
+    # 7. Extrait la sous-zone qui correspond au rect user — c'est la SEULE
+    #    partie qu'on collera dans le master. La zone du contexte ajouté
+    #    (hors rect user) est ignorée : on ne touche pas à ces pixels du master.
+    sub = composited_full.crop((rx_in_g, ry_in_g, rx_in_g + rw, ry_in_g + rh))
+
+    # 8. Recolle dans le master et sauve (JPEG q=85)
+    master.paste(sub, (rx, ry))
     master.save(MASTER_PATH, "JPEG", quality=85, optimize=True)
-    print(f"[char-edit] master mis à jour ({x},{y}, {w}×{h})", flush=True)
+    print(f"[char-edit] master mis à jour ({rx},{ry}, {rw}×{rh})", flush=True)
     return MASTER_PATH
 
 

@@ -1,0 +1,15 @@
+{
+  "id": "3",
+  "subject": "La grand-m\u00e8re et la vendeuse",
+  "aspect": "2:3",
+  "crop_in_master": {
+    "x": 342.64,
+    "y": 446.11,
+    "w": 477.61,
+    "h": 716.42
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1536
+  }
+}

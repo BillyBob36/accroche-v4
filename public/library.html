@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bibliothèque · Accroche</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --fg: #e5e5e5;
+    --dim: rgba(255,255,255,0.55);
+    --line: rgba(255,255,255,0.08);
+    --card: rgba(255,255,255,0.04);
+    --accent: rgba(212, 184, 122, 0.95);   /* warm gold */
+    --accent-soft: rgba(212, 184, 122, 0.18);
+  }
+  *, *:before, *:after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh; }
+  body { padding: 32px 24px 80px; }
+
+  header { max-width: 1280px; margin: 0 auto 28px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-weight: 300; letter-spacing: 0.01em; font-size: 28px; margin: 0; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; letter-spacing: 0.04em; }
+
+  .actions { display: flex; gap: 10px; }
+  .btn {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    color: var(--fg); padding: 8px 14px; border-radius: 6px;
+    font: inherit; font-size: 13px; cursor: pointer;
+    transition: background 150ms, border-color 150ms;
+    text-decoration: none; display: inline-block;
+  }
+  .btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.18); }
+  .btn.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .btn.primary:hover { background: rgba(212,184,122,0.32); }
+
+  .grid {
+    max-width: 1280px; margin: 0 auto;
+    display: grid; gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: transform 200ms, border-color 200ms;
+  }
+  .card:hover { transform: translateY(-2px); border-color: rgba(212,184,122,0.45); }
+
+  .thumb {
+    aspect-ratio: 16/9; background: #050505;
+    overflow: hidden; position: relative;
+    border-bottom: 1px solid var(--line);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .badge {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0,0,0,0.6); color: var(--accent);
+    padding: 3px 8px; border-radius: 4px; font-size: 10px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+
+  .body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .title { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  .meta { color: var(--dim); font-size: 11px; letter-spacing: 0.04em; }
+  .stats { display: flex; gap: 12px; color: var(--dim); font-size: 11px; margin-top: 4px; }
+  .stat strong { color: var(--fg); font-weight: 500; }
+
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .row .btn { flex: 1; padding: 10px; font-size: 12px; text-align: center; }
+
+  .empty {
+    max-width: 540px; margin: 60px auto 0; text-align: center;
+    color: var(--dim); padding: 40px;
+    border: 1px dashed var(--line); border-radius: 10px;
+  }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,20,22,0.95); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 18px; font-size: 13px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 200ms;
+    z-index: 100;
+  }
+  #toast.shown { opacity: 1; }
+
+  .danger { color: rgba(255,120,120,0.85); }
+  .danger:hover { color: rgba(255,140,140,1); background: rgba(255,80,80,0.12); border-color: rgba(255,80,80,0.4); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Bibliothèque de modules</h1>
+    <div class="sub">Scènes sauvegardées, prêtes à jouer ou à éditer</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="index.html">← Éditeur</a>
+  </div>
+</header>
+
+<div id="grid" class="grid"></div>
+<div id="empty" class="empty" style="display:none;">
+  Aucun module sauvegardé pour l'instant.<br>
+  Ouvre l'éditeur, génère une scène, puis utilise « Sauver comme module ».
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg;
+  t.classList.add('shown');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('shown'), 2200);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }); } catch { return iso; }
+}
+
+async function load() {
+  const r = await fetch('/api/scenes', { cache: 'no-store' });
+  const j = await r.json();
+  const scenes = j.scenes || [];
+  const grid = $('grid');
+  grid.innerHTML = '';
+  $('empty').style.display = scenes.length ? 'none' : 'block';
+
+  for (const s of scenes) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const masterUrl = s.master_url || `scenes/${s.id}/master.jpg`;
+    card.innerHTML = `
+      <div class="thumb">
+        <img src="${masterUrl}?t=${Date.now()}" alt="">
+        ${s.category ? `<div class="badge">${s.category}</div>` : ''}
+      </div>
+      <div class="body">
+        <div class="title">${s.name}</div>
+        <div class="meta">${fmtDate(s.updated_at || s.created_at)}</div>
+        <div class="stats">
+          <span class="stat"><strong>${s.box_count || 0}</strong> cadres</span>
+          <span class="stat"><strong>${s.level1_count || 0}</strong> questions</span>
+          <span class="stat"><strong>${s.quest_count || 0}</strong> quêtes</span>
+        </div>
+        <div class="row">
+          <a class="btn primary" href="play.html?scene=${encodeURIComponent(s.id)}">Jouer</a>
+          <a class="btn" href="index.html?scene=${encodeURIComponent(s.id)}">Éditer</a>
+        </div>
+        <div class="row">
+          <button class="btn share-link" data-id="${s.id}" data-name="${s.name.replace(/"/g, '&quot;')}">🔗 Lien public</button>
+          <button class="btn danger" data-del="${s.id}" data-name="${s.name.replace(/"/g, '&quot;')}">Supprimer</button>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  }
+
+  grid.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.del;
+      const name = btn.dataset.name;
+      if (!confirm(`Supprimer le module « ${name} » ? Cette action est définitive.`)) return;
+      const r = await fetch(`/api/scenes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (r.ok) { toast('Supprimé'); load(); }
+      else toast('Erreur lors de la suppression');
+    });
+  });
+
+  // Per-card "Lien public" : copie directement l'URL publique de la scène
+  // (basée sur location.origin — fonctionne aussi bien en local qu'en prod).
+  grid.querySelectorAll('.share-link').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const fullUrl = `${location.origin}/play.html?scene=${encodeURIComponent(id)}`;
+      try {
+        await navigator.clipboard.writeText(fullUrl);
+        toast('Lien copié : ' + fullUrl);
+      } catch {
+        prompt('Copie le lien :', fullUrl);
+      }
+    });
+  });
+}
+
+load();
+</script>
+</body>
+</html>

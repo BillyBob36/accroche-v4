@@ -1,0 +1,15 @@
+{
+  "id": "1",
+  "subject": "L'homme d'affaires en costume gris \u00e0 gauche examinant une bouteille.",
+  "aspect": "2:3",
+  "crop_in_master": {
+    "x": 30.0,
+    "y": 220.0,
+    "w": 760.44,
+    "h": 1140.66
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1536
+  }
+}

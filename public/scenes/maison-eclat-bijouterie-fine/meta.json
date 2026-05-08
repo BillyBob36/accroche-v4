@@ -1,0 +1,236 @@
+{
+  "id": "maison-eclat-bijouterie-fine",
+  "name": "Maison Éclat: Bijouterie fine",
+  "category": "luxe joaillerie",
+  "created_at": "2026-05-05T20:50:45",
+  "updated_at": "2026-05-05T21:09:30",
+  "box_count": 5,
+  "boxes": [
+    {
+      "id": "1",
+      "x": 727.217041015625,
+      "y": 377.9866180419922,
+      "w": 378.7191975911458,
+      "h": 568.0787963867188,
+      "aspect": "2:3",
+      "subject": " Le couple."
+    },
+    {
+      "id": "3",
+      "x": 342.6376724243164,
+      "y": 446.1122131347656,
+      "w": 477.6109619140625,
+      "h": 716.4164428710938,
+      "aspect": "2:3",
+      "subject": "La grand-mère et la vendeuse"
+    },
+    {
+      "id": "4",
+      "x": 1155.748291015625,
+      "y": 305.4659118652344,
+      "w": 262.24656168619794,
+      "h": 393.3698425292969,
+      "aspect": "2:3",
+      "subject": "La Dame aux cheveux blancs Qui regarde vers la gauche."
+    },
+    {
+      "id": "5",
+      "x": 940.3839721679688,
+      "y": 547.7759399414062,
+      "w": 839.4817504882812,
+      "h": 839.4817504882812,
+      "aspect": "1:1",
+      "subject": "Les trois clients, la vendeuse et le bijou."
+    },
+    {
+      "id": "6",
+      "x": 1742.506591796875,
+      "y": 388.97447204589844,
+      "w": 353.0804748535156,
+      "h": 529.6207122802734,
+      "aspect": "2:3",
+      "subject": " cette femme."
+    }
+  ],
+  "level1_questions": [
+    {
+      "id": "q-count",
+      "text": "Combien y a-t-il de clients dans la boutique ?",
+      "choices": [
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "correct_index": 2,
+      "explanation": "Il y a 5 clients : un couple au centre, une grand-mère en train d'examiner un bijou, une dame aux cheveux blancs qui regarde vers la gauche, et une femme à droite près d'un comptoir. La vendeuse n'est pas comptée."
+    },
+    {
+      "id": "q-gender",
+      "text": "Combien y a-t-il d'hommes et de femmes parmi les clients ?",
+      "choices": [
+        "1 homme, 4 femmes",
+        "2 hommes, 3 femmes",
+        "0 homme, 5 femmes",
+        "3 hommes, 2 femmes"
+      ],
+      "correct_index": 0,
+      "explanation": "Un seul homme (dans le couple) et 4 femmes : sa compagne, la grand-mère, la dame aux cheveux blancs et la femme à droite. Bien repérer la composition permet d'adapter son discours et ses recommandations."
+    },
+    {
+      "id": "q-senior",
+      "text": "Combien de personnes paraissent avoir 50 ans ou plus ?",
+      "choices": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "correct_index": 1,
+      "explanation": "La grand-mère et la dame aux cheveux blancs : 2 clientes seniors. Cette catégorie est souvent en recherche de bijoux durables, intemporels — un argument à mettre en avant."
+    },
+    {
+      "id": "q-product",
+      "text": "Quel type de produit est mis en valeur au centre de la scène ?",
+      "choices": [
+        "Une montre de luxe",
+        "Un collier ou une parure",
+        "Une bague de fiançailles",
+        "Une paire de boucles d'oreilles"
+      ],
+      "correct_index": 1,
+      "explanation": "Au centre, c'est un bijou de cou (collier / parure) qui est présenté par la vendeuse au groupe central. Ce produit peut servir d'amorce de conversation avec les clients qui hésitent ailleurs dans la boutique."
+    },
+    {
+      "id": "q-back-lady",
+      "text": "Que regarde la dame aux cheveux blancs au fond ?",
+      "choices": [
+        "Le bijou présenté par la vendeuse",
+        "La sortie",
+        "Une vitrine sur sa gauche",
+        "Le couple au centre"
+      ],
+      "correct_index": 2,
+      "explanation": "Elle regarde vers la gauche, en direction d'une vitrine — pas vers le groupe central. C'est le signe d'une cliente intéressée par autre chose : excellente occasion d'aller la rejoindre pour comprendre ce qui l'attire."
+    },
+    {
+      "id": "q-confidence",
+      "text": "La femme à droite, près de l'entrée, semble-t-elle à l'aise dans la boutique ?",
+      "choices": [
+        "Très à l'aise, comme une habituée",
+        "Hésitante, un peu intimidée",
+        "Pressée, comme si elle cherchait quelqu'un",
+        "Indifférente, juste de passage"
+      ],
+      "correct_index": 1,
+      "explanation": "Sa posture est légèrement réservée : c'est une cliente potentielle qui ne veut pas être brusquée. Une approche douce, sans pression, est ici la clé."
+    },
+    {
+      "id": "q-central-mood",
+      "text": "Quelle est l'ambiance du groupe central (couple + vendeuse) ?",
+      "choices": [
+        "Tendue, le client semble vouloir partir",
+        "Détendue, complice, le couple est intéressé",
+        "Froide, la vendeuse insiste trop",
+        "Distante, le couple regarde ailleurs"
+      ],
+      "correct_index": 1,
+      "explanation": "L'échange est complice : le couple est engagé dans la présentation. C'est une vente avancée — laissez la vendeuse en place finir son travail et concentrez-vous sur les autres clients qui ont besoin d'attention."
+    }
+  ],
+  "quests": [
+    {
+      "id": "quest-1",
+      "box_id": "3",
+      "title": "La grand-mère",
+      "intro_text": "Une cliente d'un certain âge, élégante, observe attentivement un collier doré exposé en vitrine. Elle ne s'est pas encore tournée vers vous. Vous décidez de l'aborder.",
+      "image1_prompt": "Same exact photograph. Keep ALL existing people, lighting, framing, and background pixel-identical. ADD a delicate fine gold necklace with a small pendant resting visibly on the elderly lady's neckline (the woman with white or grey hair, age 60+, the visible client). The necklace should look like a luxury jewellery piece she has just been admiring — fine chain, tasteful, warm gold tone catching the boutique's golden ambient light. DO NOT modify her face, her hair, her clothing colour, her pose, or anyone else in the image. ONLY add the necklace as if photographed in the same shot. Photorealistic, magazine-quality fashion editorial. No watermark, no text.",
+      "image2_prompt": "Reframe to a tighter portrait of ONLY the elderly lady (the woman with white/grey hair) seen from the saleswoman's viewpoint as she approaches. Her facial expression must be RESERVED, polite but cool — slightly closed-off body language, not yet smiling, neutral mouth, evaluating gaze. She is wearing the same fine gold necklace from the previous shot. Preserve identity exactly: same face, same age, same hair, same skin tone, same clothing. Match the lighting and creamy bokeh boutique background from the input. Vertical portrait framing showing her from mid-chest up. Photorealistic, high resolution, magazine-quality editorial portrait. No watermark, no text, no logos.",
+      "dialogue_choices": [
+        {
+          "text": "Bonjour Madame, j'adore votre collier !",
+          "is_best": true,
+          "explanation": "★ Excellent. Un compliment authentique et précis sur un détail personnel ouvre la conversation sans pression commerciale. La cliente se sent vue comme une personne, pas comme un porte-monnaie. C'est l'amorce idéale pour basculer naturellement vers le bijou qui l'attire."
+        },
+        {
+          "text": "Bonjour Madame, puis-je vous aider à trouver quelque chose ?",
+          "is_best": false,
+          "explanation": "Trop générique — cette phrase est utilisée partout et déclenche un réflexe de défense (« non merci, je regarde »). À éviter en boutique de luxe."
+        },
+        {
+          "text": "Madame, ce collier vous irait à merveille — voulez-vous l'essayer ?",
+          "is_best": false,
+          "explanation": "Trop direct et prématuré. Vous n'avez pas encore créé de lien : la cliente perçoit un argumentaire de vente plutôt qu'une vraie écoute. Risque de la braquer."
+        },
+        {
+          "text": "Bonjour Madame, prenez votre temps, je suis là si besoin.",
+          "is_best": false,
+          "explanation": "Poli mais passif. Vous laissez la cliente seule alors qu'elle exprime déjà un intérêt visible. Une approche plus engagée, sans pression, aurait été plus efficace."
+        }
+      ],
+      "_has_images": true
+    },
+    {
+      "id": "quest-1778007987667",
+      "box_id": "4",
+      "title": "La dame aux cheveux blancs",
+      "intro_text": "Une cliente d'un certain âge, élégante, observe attentivement une vitrine sur sa gauche. Elle ne s'est pas tournée vers le groupe central. Quelque chose de précis a capté son attention.",
+      "image1_prompt": "Same exact photograph. Keep ALL existing people, lighting, framing, and background pixel-identical. ONLY MODIFICATION: in the display case the elderly white-haired woman (visible in the image, looking left) is gazing at, place ONE clearly visible gold pearl pendant brooch on a small white cushion under the glass. The brooch should be photographed as if it has always been there: same warm boutique lighting, same focus depth, same realistic reflections on the glass. DO NOT modify her face, hair, posture, clothing, or anyone else in the image. Photorealistic, magazine-quality fashion editorial. No watermark, no text, no logos.",
+      "image2_prompt": "Reframe to a tighter portrait of ONLY the elderly woman with white/grey hair. She is photographed from a three-quarters angle, still gazing slightly off-camera (toward an item she is admiring), with a CONCENTRATED, FOCUSED expression — eyebrows slightly drawn together, mouth softly parted as if mentally evaluating, eyes alive with curiosity. Preserve identity exactly: same face, same age (60+), same white hair, same skin tone, same beige coat. Match the lighting and creamy bokeh boutique background from the input. Vertical portrait framing showing her from mid-chest up. Photorealistic, high resolution, editorial portrait. No watermark, no text, no logos.",
+      "dialogue_choices": [
+        {
+          "text": "Madame, je vois que cette pièce vous intrigue — souhaitez-vous que je vous la sorte ?",
+          "explanation": "★ Excellent. Vous reconnaissez ce qu'elle regarde et vous proposez un service concret sans la juger. La cliente se sent comprise et accompagnée — l'opportunité commerciale s'ouvre naturellement.",
+          "is_best": true
+        },
+        {
+          "text": "Bonjour Madame, puis-je vous aider ?",
+          "explanation": "Trop générique. Une cliente concentrée comme elle attend qu'on rebondisse sur ce qu'elle observe, pas une formule passe-partout.",
+          "is_best": false
+        },
+        {
+          "text": "Bonjour Madame, prenez tout votre temps !",
+          "explanation": "Trop neutre. Vous ratez l'occasion d'engager une vraie conversation alors que son intérêt est manifeste — elle risque de partir sans qu'on lui propose rien.",
+          "is_best": false
+        },
+        {
+          "text": "Cette pièce est notre dernière du modèle, vous avez raison de vous y intéresser !",
+          "explanation": "Trop pressant. La technique de rareté en ouverture met la cliente sur la défensive et casse la confiance avant même d'avoir établi de lien.",
+          "is_best": false
+        }
+      ],
+      "_has_images": true
+    },
+    {
+      "id": "quest-1778008170181",
+      "box_id": "6",
+      "title": "La cliente qui entre",
+      "intro_text": "Une jeune femme vient d'entrer dans la boutique. Sa posture est légèrement réservée — elle reste près de l'entrée, regarde autour d'elle sans oser s'approcher d'un comptoir. Elle paraît hésitante : peut-être à la recherche d'un cadeau, peut-être simplement curieuse.",
+      "image1_prompt": "Same exact photograph. Keep ALL existing people, lighting, framing, and background pixel-identical. ONLY MODIFICATION: the woman near the entrance (visible at the right edge of the boutique, the hesitant entering client) has now slightly turned her body toward the inside of the boutique, shoulders relaxed a touch, as if she's just decided to look around. Same face, same hair, same clothing color, same identity, same overall position — only the body orientation changes by a few degrees. DO NOT modify her face details or anyone else in the image. Photorealistic, magazine-quality fashion editorial. No watermark, no text, no logos.",
+      "image2_prompt": "Reframe to a tighter portrait of ONLY this woman, photographed from the saleswoman's viewpoint as she gently approaches her. Her facial expression must be HESITANT, slightly intimidated but polite — eyes glancing partly downward or to the side, a faint shy smile, body language closed (slight inward tilt of shoulders). She is not yet at ease. Preserve identity exactly: same face, same age (~25-35), same hair, same skin tone, same clothing color and style. Match the lighting and creamy bokeh boutique background from the input. Vertical portrait framing showing her from mid-chest up. Photorealistic, high resolution, magazine-quality editorial portrait. No watermark, no text, no logos.",
+      "dialogue_choices": [
+        {
+          "text": "Bonjour, bienvenue chez Maison Éclat. Prenez le temps de vous installer ; je suis là si vous voulez en discuter.",
+          "explanation": "★ Excellent. Vous l'accueillez chaleureusement, désamorcez la pression (« prenez le temps »), et offrez une porte d'entrée si elle souhaite échanger. C'est l'approche idéale pour un client hésitant en boutique de luxe.",
+          "is_best": true
+        },
+        {
+          "text": "Bonjour, est-ce pour vous, ou cherchez-vous un cadeau ?",
+          "explanation": "Trop direct pour quelqu'un d'intimidé. Cette question oblige une réponse alors qu'elle n'est pas encore prête à s'engager — risque de la mettre mal à l'aise.",
+          "is_best": false
+        },
+        {
+          "text": "Bonjour ! Avez-vous un budget en tête ? Je peux vous orienter.",
+          "explanation": "À éviter absolument. Parler d'argent en ouverture, surtout avec un client hésitant, casse instantanément la confiance et donne un signal commercial trop fort.",
+          "is_best": false
+        },
+        {
+          "text": "Bonjour, vous êtes la bienvenue. Faites-moi signe quand vous voudrez.",
+          "explanation": "Poli mais trop distant. Vous accueillez puis vous reculez immédiatement — la cliente, déjà hésitante, va probablement repartir sans avoir osé demander. Une formule plus engageante crée le déclic.",
+          "is_best": false
+        }
+      ]
+    }
+  ],
+  "master_filename": "master.jpg"
+}

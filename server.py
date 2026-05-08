@@ -1,0 +1,985 @@
+"""Static file server for public/ + API endpoints for the box-driven pipeline.
+
+Endpoints:
+  GET  /api/status              -> current pipeline status (JSON)
+  POST /api/master/upload       -> multipart form, field "image"; resize/crop to 2560x1440 + save master.png
+  POST /api/master/generate     -> body { prompt }, kick off build.py only (master gen)
+  POST /api/boxes               -> body { boxes: [...] }, save user-drawn boxes
+  GET  /api/boxes               -> return saved boxes (or [])
+  POST /api/generate            -> body { boxes: [...] }, kick off the box-driven pipeline
+
+  -- Scenes (saved modules) --
+  POST /api/scenes              -> body { name, category? }, snapshot current public/* into a scene
+  GET  /api/scenes              -> list all saved scenes (id, name, box_count, ...)
+  GET  /api/scenes/<id>         -> full meta.json
+  POST /api/scenes/<id>/load    -> copy scene's assets back into public/ (master, boxes, lineart, exp3)
+  DELETE /api/scenes/<id>       -> remove a scene
+  POST /api/scenes/<id>/meta    -> body { name?, level1_questions?, quests? } merge-update meta.json
+  POST /api/scenes/<id>/quest/<qid>/generate -> generate quest image1+image2 for a quest
+
+All other paths serve files under public/.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import io
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import unicodedata
+from email.parser import BytesParser
+from email.policy import default as default_policy
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parent
+PUBLIC = ROOT / "public"
+STATUS_FILE = PUBLIC / ".gen_status.json"
+BOXES_FILE = PUBLIC / ".boxes.json"
+MASTER_PATH = PUBLIC / "master.jpg"
+SCENES_DIR = PUBLIC / "scenes"
+PIPELINE_FULL = ROOT / "pipeline" / "full.py"
+PIPELINE_BUILD = ROOT / "pipeline" / "build.py"
+PIPELINE_QUEST = ROOT / "pipeline" / "quest_gen.py"
+PIPELINE_REGEN_BOX = ROOT / "pipeline" / "regen_box.py"
+PIPELINE_CHAR_EDIT = ROOT / "pipeline" / "character_edit.py"
+
+MASTER_W, MASTER_H = 2560, 1440
+
+_lock = threading.Lock()
+_running = False
+
+# ---------- Cloudflare quick tunnel state ----------
+# We launch `cloudflared tunnel --url http://localhost:<PORT>` and parse its
+# stderr for the `https://<random>.trycloudflare.com` URL it announces. The
+# tunnel runs as a child subprocess; killing the server kills the tunnel.
+_tunnel_lock = threading.Lock()
+_tunnel: dict[str, object] = {
+    "process": None,        # subprocess.Popen | None
+    "url": None,            # str | None — public URL once known
+    "started_at": None,     # ISO string
+    "error": None,          # str | None
+}
+
+CLOUDFLARED = r"C:\Program Files\cloudflared\cloudflared.exe"
+
+_RE_TRYCF = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+
+
+# ---------- helpers ----------
+
+def _slugify(name: str) -> str:
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+    return s or "scene"
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+def _read_json(p: Path, default):
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
+    except Exception:
+        return default
+
+
+def _write_json(p: Path, data) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _list_scene_ids() -> list[str]:
+    if not SCENES_DIR.exists():
+        return []
+    return sorted(p.name for p in SCENES_DIR.iterdir() if (p / "meta.json").exists())
+
+
+def _scene_meta(scene_id: str) -> dict | None:
+    meta = SCENES_DIR / scene_id / "meta.json"
+    if not meta.exists():
+        return None
+    return _read_json(meta, None)
+
+
+def _snapshot_current_scene(name: str, category: str = "") -> dict:
+    """Copy the current state of public/ (master, boxes, lineart-svg, exp3) into scenes/<slug>/."""
+    slug = _slugify(name)
+    base = SCENES_DIR / slug
+    if base.exists():
+        # If a scene with this slug already exists, append a numeric suffix
+        i = 2
+        while (SCENES_DIR / f"{slug}-{i}").exists():
+            i += 1
+        slug = f"{slug}-{i}"
+        base = SCENES_DIR / slug
+    base.mkdir(parents=True, exist_ok=True)
+
+    # master.jpg (or master.png as fallback)
+    master_src = MASTER_PATH if MASTER_PATH.exists() else (PUBLIC / "master.png")
+    if master_src.exists():
+        shutil.copy2(master_src, base / master_src.name)
+
+    # boxes
+    boxes = _read_json(BOXES_FILE, [])
+
+    # lineart-svg/, exp3/imageB/, exp3/imageC/, crops/
+    for sub in ("lineart-svg", "exp3/imageB", "exp3/imageC", "crops"):
+        src = PUBLIC / sub
+        if src.exists():
+            dst = base / sub
+            dst.mkdir(parents=True, exist_ok=True)
+            for f in src.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, dst / f.name)
+
+    meta = {
+        "id": slug,
+        "name": name,
+        "category": category,
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "box_count": len(boxes),
+        "boxes": boxes,
+        "level1_questions": [],
+        "quests": [],
+        "master_filename": master_src.name if master_src.exists() else None,
+    }
+    _write_json(base / "meta.json", meta)
+    _write_json(base / "boxes.json", boxes)
+    return meta
+
+
+def _restore_scene(scene_id: str) -> bool:
+    """Restore a saved scene's assets back into public/ root so the editor/pipeline operates on it."""
+    base = SCENES_DIR / scene_id
+    meta = _scene_meta(scene_id)
+    if not meta:
+        return False
+
+    # master
+    for ext in ("jpg", "png"):
+        for stale in PUBLIC.glob(f"master.{ext}"):
+            stale.unlink()
+    master_name = meta.get("master_filename") or "master.jpg"
+    src_master = base / master_name
+    if src_master.exists():
+        shutil.copy2(src_master, PUBLIC / src_master.name)
+
+    # boxes
+    _write_json(BOXES_FILE, meta.get("boxes", []))
+
+    # asset dirs (replace, not merge)
+    for sub in ("lineart-svg", "exp3/imageB", "exp3/imageC", "crops"):
+        dst = PUBLIC / sub
+        if dst.exists():
+            shutil.rmtree(dst)
+        src = base / sub
+        if src.exists():
+            shutil.copytree(src, dst)
+    return True
+
+
+def _kickoff_full(prompt: str, boxes_json: str) -> None:
+    global _running
+    env = os.environ.copy()
+    env["ACCROCHE_PROMPT"] = prompt
+    env["ACCROCHE_BOXES"] = boxes_json
+    env["PYTHONIOENCODING"] = "utf-8"
+    try:
+        subprocess.run(
+            [sys.executable, str(PIPELINE_FULL)],
+            env=env, cwd=str(ROOT),
+        )
+    finally:
+        with _lock:
+            _running = False
+
+
+def _kickoff_master_only(prompt: str) -> None:
+    global _running
+    env = os.environ.copy()
+    env["ACCROCHE_PROMPT"] = prompt
+    env["PYTHONIOENCODING"] = "utf-8"
+    try:
+        if MASTER_PATH.exists():
+            MASTER_PATH.unlink()
+        STATUS_FILE.write_text(json.dumps({
+            "running": True, "step_index": 1, "total_steps": 1,
+            "step": "Génération du master 2560x1440 (~30-60s)",
+            "error": None, "prompt": prompt,
+        }, indent=2), encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(PIPELINE_BUILD), "--prompt", prompt],
+            env=env, cwd=str(ROOT),
+        )
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": 1, "total_steps": 1,
+            "step": "Master prêt" if proc.returncode == 0 else None,
+            "error": None if proc.returncode == 0 else f"build.py exit {proc.returncode}",
+            "prompt": prompt, "master_only": True,
+        }, indent=2), encoding="utf-8")
+    finally:
+        with _lock:
+            _running = False
+
+
+def _kickoff_upload(image_bytes: bytes) -> None:
+    """Process uploaded image — pad to 2560x1440, outpaint via GPT, save as master.jpg."""
+    global _running
+    import tempfile
+    EDIT_SCRIPT = ROOT / "pipeline" / "_imagegen" / "edit.py"
+    OUTPAINT_PROMPT = (
+        "Extend this image to fill the entire frame seamlessly. The white-padded areas "
+        "must be replaced with a natural extension of the existing scene — same setting, "
+        "same lighting, same perspective, same color palette, same photographic style. "
+        "Preserve the original photographic content (the non-white area) exactly as it is — "
+        "do not modify, recolor, or shift it. Only fill the masked white areas with content "
+        "that flows organically from the visible photograph. "
+        "If the original image is small or low-resolution, deliver a high-resolution result "
+        "matching the requested output size with crisp natural detail. "
+        "The final result must look like a single coherent photograph captured at this aspect "
+        "ratio. No watermark, no text, no artificial seams."
+    )
+    try:
+        STATUS_FILE.write_text(json.dumps({
+            "running": True, "step_index": 1, "total_steps": 2,
+            "step": "Préparation de l'image (centrée + masque)",
+            "error": None,
+        }, indent=2), encoding="utf-8")
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        src_w, src_h = img.size
+        target_aspect = MASTER_W / MASTER_H
+        src_aspect = src_w / src_h
+
+        aspect_close = abs(src_aspect - target_aspect) < 0.03
+        big_enough = src_w >= int(MASTER_W * 0.95) and src_h >= int(MASTER_H * 0.95)
+
+        if aspect_close and big_enough:
+            scaled = img.resize((MASTER_W, MASTER_H), Image.LANCZOS)
+            scaled.save(MASTER_PATH, "JPEG", quality=85, optimize=True)
+            STATUS_FILE.write_text(json.dumps({
+                "running": False, "step_index": 2, "total_steps": 2,
+                "step": "Master prêt (resize direct, pas de GPT nécessaire)",
+                "error": None, "master_only": True,
+            }, indent=2), encoding="utf-8")
+            return
+
+        scale = min(MASTER_W / src_w, MASTER_H / src_h)
+        new_w = int(round(src_w * scale))
+        new_h = int(round(src_h * scale))
+        new_w -= new_w % 2
+        new_h -= new_h % 2
+        resized = img.resize((new_w, new_h), Image.LANCZOS)
+
+        canvas = Image.new("RGB", (MASTER_W, MASTER_H), (255, 255, 255))
+        pad_x = (MASTER_W - new_w) // 2
+        pad_y = (MASTER_H - new_h) // 2
+        canvas.paste(resized, (pad_x, pad_y))
+
+        mask = Image.new("RGBA", (MASTER_W, MASTER_H), (0, 0, 0, 0))
+        opaque = Image.new("RGBA", (new_w, new_h), (0, 0, 0, 255))
+        mask.paste(opaque, (pad_x, pad_y))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            padded_path = Path(tmp) / "padded.png"
+            mask_path = Path(tmp) / "mask.png"
+            canvas.save(padded_path)
+            mask.save(mask_path)
+
+            for ext in ("png", "jpg", "jpeg", "webp"):
+                for stale in PUBLIC.glob(f"master*.{ext}"):
+                    stale.unlink()
+
+            STATUS_FILE.write_text(json.dumps({
+                "running": True, "step_index": 2, "total_steps": 2,
+                "step": "Outpainting via gpt-image-2 (~30-90s)",
+                "error": None,
+                "padding": {"x": pad_x, "y": pad_y, "w": new_w, "h": new_h},
+            }, indent=2), encoding="utf-8")
+
+            cmd = [
+                sys.executable, str(EDIT_SCRIPT),
+                "--image", str(padded_path),
+                "--mask", str(mask_path),
+                "--prompt", OUTPAINT_PROMPT,
+                "--output", str(MASTER_PATH),
+                "--size", f"{MASTER_W}x{MASTER_H}",
+                "--quality", "medium",
+                "--format", "jpeg",
+            ]
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            proc = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode != 0:
+                raise RuntimeError(f"edit.py failed: {proc.stderr.strip()[:400]}")
+            actual = Path(proc.stdout.strip().splitlines()[-1])
+            if actual.resolve() != MASTER_PATH.resolve():
+                actual.rename(MASTER_PATH)
+
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": 2, "total_steps": 2,
+            "step": "Master prêt", "error": None, "master_only": True,
+        }, indent=2), encoding="utf-8")
+    except Exception as e:
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": None, "total_steps": 2,
+            "step": None, "error": str(e), "master_only": True,
+        }, indent=2), encoding="utf-8")
+    finally:
+        with _lock:
+            _running = False
+
+
+def _kickoff_regen_box(box: dict, opts: dict, scene_id: str | None) -> None:
+    """Regenerate selected per-box assets, then optionally resnap into the scene."""
+    global _running
+    box_id = str(box.get("id"))
+    try:
+        labels = []
+        if opts.get("imageB"): labels.append("zoom 1")
+        if opts.get("imageC"): labels.append("zoom 2")
+        if opts.get("dessin"): labels.append("dessin")
+        STATUS_FILE.write_text(json.dumps({
+            "running": True, "step_index": 1, "total_steps": 1,
+            "step": f"Régénération cadre {box_id} ({', '.join(labels) or 'rien'})…",
+            "error": None,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["ACCROCHE_BOX"] = json.dumps(box, ensure_ascii=False)
+        env["ACCROCHE_OPTS"] = json.dumps(opts)
+        proc = subprocess.run(
+            [sys.executable, str(PIPELINE_REGEN_BOX)],
+            env=env, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
+        )
+        if proc.returncode != 0:
+            STATUS_FILE.write_text(json.dumps({
+                "running": False, "step_index": None, "total_steps": 1,
+                "step": None, "error": (proc.stderr or proc.stdout)[-400:],
+            }, indent=2, ensure_ascii=False), encoding="utf-8")
+            return
+        # Re-snap into the scene if one is loaded so the saved module reflects the change.
+        if scene_id and (SCENES_DIR / scene_id / "meta.json").exists():
+            try:
+                _resnap_scene(scene_id)
+            except Exception as e:
+                # Non-fatal: report the error but mark generation as done.
+                STATUS_FILE.write_text(json.dumps({
+                    "running": False, "step_index": 1, "total_steps": 1,
+                    "step": "Régénéré (resnap échoué)", "error": str(e),
+                }, indent=2, ensure_ascii=False), encoding="utf-8")
+                return
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": 1, "total_steps": 1,
+            "step": "Régénération terminée", "error": None,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+    finally:
+        with _lock:
+            _running = False
+
+
+def _tunnel_status() -> dict:
+    """Snapshot of the current tunnel state. Cleans up dead processes."""
+    with _tunnel_lock:
+        proc = _tunnel.get("process")
+        if proc is not None and proc.poll() is not None:
+            # Process has exited.
+            _tunnel["process"] = None
+            if not _tunnel.get("error"):
+                _tunnel["error"] = f"cloudflared exited with code {proc.returncode}"
+            _tunnel["url"] = None
+        return {
+            "running": _tunnel.get("process") is not None and _tunnel["process"].poll() is None,
+            "url": _tunnel.get("url"),
+            "started_at": _tunnel.get("started_at"),
+            "error": _tunnel.get("error"),
+            "cloudflared_path": CLOUDFLARED if Path(CLOUDFLARED).exists() else None,
+        }
+
+
+def _start_tunnel(port: int) -> dict:
+    """Start a cloudflared quick tunnel pointing at this server. Idempotent."""
+    with _tunnel_lock:
+        if _tunnel.get("process") and _tunnel["process"].poll() is None:
+            return _tunnel_status()
+        if not Path(CLOUDFLARED).exists():
+            _tunnel["error"] = (
+                "cloudflared introuvable. Installe-le depuis "
+                "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+            )
+            return _tunnel_status()
+        try:
+            proc = subprocess.Popen(
+                [CLOUDFLARED, "tunnel", "--url", f"http://localhost:{port}",
+                 "--no-autoupdate", "--logfile", str(ROOT / ".tunnel.log")],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+            )
+        except Exception as e:
+            _tunnel["error"] = f"impossible de lancer cloudflared: {e}"
+            return _tunnel_status()
+        _tunnel["process"] = proc
+        _tunnel["started_at"] = _now_iso()
+        _tunnel["url"] = None
+        _tunnel["error"] = None
+
+    # Read its output in a daemon thread to capture the public URL.
+    def _reader(p: subprocess.Popen) -> None:
+        for line in iter(p.stdout.readline, ""):
+            if not line:
+                break
+            m = _RE_TRYCF.search(line)
+            if m:
+                with _tunnel_lock:
+                    _tunnel["url"] = m.group(0)
+                # Don't break — keep draining so the pipe doesn't fill up.
+        # Process ended.
+        with _tunnel_lock:
+            if not _tunnel.get("error") and p.returncode not in (0, None):
+                _tunnel["error"] = f"cloudflared exited (code {p.returncode})"
+
+    threading.Thread(target=_reader, args=(proc,), daemon=True).start()
+    return _tunnel_status()
+
+
+def _stop_tunnel() -> dict:
+    with _tunnel_lock:
+        proc = _tunnel.get("process")
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception:
+                pass
+        _tunnel["process"] = None
+        _tunnel["url"] = None
+    return _tunnel_status()
+
+
+def _kickoff_character_edit(rect: dict, mask_b64: str, prompt: str,
+                            scene_id: str | None) -> None:
+    """Édition pixel-par-masque d'une zone du master via gpt-image-2."""
+    global _running
+    import base64
+    import tempfile
+    try:
+        STATUS_FILE.write_text(json.dumps({
+            "running": True, "step_index": 1, "total_steps": 1,
+            "step": "Édition par masque (~30-60s)…",
+            "error": None,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Décode le PNG masque dans un fichier temporaire
+        try:
+            mask_bytes = base64.b64decode(mask_b64)
+        except Exception as e:
+            raise RuntimeError(f"masque base64 invalide : {e}")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(mask_bytes)
+            mask_path = tmp.name
+        try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["ACCROCHE_CHAR_RECT"] = json.dumps(rect)
+            env["ACCROCHE_CHAR_PROMPT"] = prompt
+            env["ACCROCHE_CHAR_MASK_PATH"] = mask_path
+            proc = subprocess.run(
+                [sys.executable, str(PIPELINE_CHAR_EDIT)],
+                env=env, cwd=str(ROOT),
+                capture_output=True, text=True, encoding="utf-8",
+            )
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout)[-400:].strip()
+                STATUS_FILE.write_text(json.dumps({
+                    "running": False, "step_index": None, "total_steps": 1,
+                    "step": None, "error": err or f"character_edit exit {proc.returncode}",
+                }, indent=2, ensure_ascii=False), encoding="utf-8")
+                return
+            # Re-snap dans la scène si on en édite une
+            if scene_id and (SCENES_DIR / scene_id / "meta.json").exists():
+                try:
+                    _resnap_scene(scene_id)
+                except Exception as e:
+                    STATUS_FILE.write_text(json.dumps({
+                        "running": False, "step_index": 1, "total_steps": 1,
+                        "step": "Master édité (resnap échoué)", "error": str(e),
+                    }, indent=2, ensure_ascii=False), encoding="utf-8")
+                    return
+            STATUS_FILE.write_text(json.dumps({
+                "running": False, "step_index": 1, "total_steps": 1,
+                "step": "Édition par masque terminée", "error": None,
+            }, indent=2, ensure_ascii=False), encoding="utf-8")
+        finally:
+            try: Path(mask_path).unlink(missing_ok=True)
+            except OSError: pass
+    except Exception as e:
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": None, "total_steps": 1,
+            "step": None, "error": str(e),
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+    finally:
+        with _lock:
+            _running = False
+
+
+def _kickoff_quest_gen(scene_id: str, quest_id: str) -> None:
+    global _running
+    try:
+        STATUS_FILE.write_text(json.dumps({
+            "running": True, "step_index": 1, "total_steps": 2,
+            "step": f"Génération images de la quête {quest_id}…",
+            "error": None,
+        }, indent=2), encoding="utf-8")
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        proc = subprocess.run(
+            [sys.executable, str(PIPELINE_QUEST), "--scene", scene_id, "--quest", quest_id],
+            env=env, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
+        )
+        if proc.returncode != 0:
+            STATUS_FILE.write_text(json.dumps({
+                "running": False, "step_index": None, "total_steps": 2,
+                "step": None, "error": (proc.stderr or proc.stdout)[:400],
+            }, indent=2), encoding="utf-8")
+            return
+        STATUS_FILE.write_text(json.dumps({
+            "running": False, "step_index": 2, "total_steps": 2,
+            "step": "Quête prête", "error": None,
+        }, indent=2), encoding="utf-8")
+    finally:
+        with _lock:
+            _running = False
+
+
+def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
+    headers = (
+        b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n"
+    )
+    msg = BytesParser(policy=default_policy).parsebytes(headers + body)
+    parts: dict[str, bytes] = {}
+    for part in msg.iter_parts():
+        disp = part.get("Content-Disposition", "")
+        name = None
+        for chunk in disp.split(";"):
+            chunk = chunk.strip()
+            if chunk.startswith('name="'):
+                name = chunk[6:-1]
+                break
+        if name:
+            payload = part.get_payload(decode=True)
+            parts[name] = payload if isinstance(payload, (bytes, bytearray)) else b""
+    return parts
+
+
+# Match URL paths like /api/scenes/<id> or /api/scenes/<id>/load
+_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|quest/[^/]+/generate))?$")
+
+
+def _resnap_scene(scene_id: str) -> dict | None:
+    """Replace asset folders + boxes in the saved scene with current public/ state.
+    Preserves name, category, level1_questions, quests, created_at."""
+    base = SCENES_DIR / scene_id
+    meta = _scene_meta(scene_id)
+    if not meta:
+        return None
+
+    # master
+    master_src = MASTER_PATH if MASTER_PATH.exists() else (PUBLIC / "master.png")
+    if master_src.exists():
+        # Wipe any prior master files in the scene dir
+        for ext in ("jpg", "jpeg", "png", "webp"):
+            for stale in base.glob(f"master.{ext}"):
+                stale.unlink()
+        shutil.copy2(master_src, base / master_src.name)
+        meta["master_filename"] = master_src.name
+
+    # boxes
+    boxes = _read_json(BOXES_FILE, [])
+    meta["boxes"] = boxes
+    meta["box_count"] = len(boxes)
+
+    # asset dirs
+    for sub in ("lineart-svg", "exp3/imageB", "exp3/imageC", "crops"):
+        dst = base / sub
+        if dst.exists():
+            shutil.rmtree(dst)
+        src = PUBLIC / sub
+        if src.exists():
+            shutil.copytree(src, dst)
+
+    meta["updated_at"] = _now_iso()
+    _write_json(base / "meta.json", meta)
+    _write_json(base / "boxes.json", boxes)
+    return meta
+
+
+def _annotate_quest_images(scene_id: str, meta: dict) -> dict:
+    """Mark each quest with _has_images=True if both image1.jpg and image2.jpg exist."""
+    base = SCENES_DIR / scene_id
+    quests = meta.get("quests", [])
+    for q in quests:
+        qid = str(q.get("id"))
+        d = base / "quests" / qid
+        q["_has_images"] = (d / "image1.jpg").exists() and (d / "image2.jpg").exists()
+    return meta
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(PUBLIC), **kwargs)
+
+    def _send_json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self) -> bytes:
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length) if length else b""
+
+    def _read_json(self) -> dict | None:
+        try:
+            return json.loads(self._read_body().decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "invalid JSON"})
+            return None
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?")[0]
+        if path == "/api/status":
+            data = {"running": _running, "step": None, "error": None}
+            if STATUS_FILE.exists():
+                try:
+                    data = json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            with _lock:
+                data["running"] = _running or data.get("running", False)
+            self._send_json(200, data)
+            return
+        if path == "/api/boxes":
+            boxes = _read_json(BOXES_FILE, [])
+            self._send_json(200, {"boxes": boxes})
+            return
+        if path == "/api/share/status":
+            self._send_json(200, _tunnel_status())
+            return
+        if path == "/api/scenes":
+            out = []
+            for sid in _list_scene_ids():
+                m = _scene_meta(sid) or {}
+                out.append({
+                    "id": m.get("id", sid),
+                    "name": m.get("name", sid),
+                    "category": m.get("category", ""),
+                    "created_at": m.get("created_at"),
+                    "updated_at": m.get("updated_at"),
+                    "box_count": m.get("box_count", len(m.get("boxes", []))),
+                    "level1_count": len(m.get("level1_questions", [])),
+                    "quest_count": len(m.get("quests", [])),
+                    "master_url": f"scenes/{sid}/{m.get('master_filename') or 'master.jpg'}",
+                })
+            self._send_json(200, {"scenes": out})
+            return
+        m = _RE_SCENE.match(path)
+        if m and not m.group(2):
+            sid = m.group(1)
+            meta = _scene_meta(sid)
+            if not meta:
+                self._send_json(404, {"error": "scene not found"})
+                return
+            _annotate_quest_images(sid, meta)
+            self._send_json(200, meta)
+            return
+        super().do_GET()
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        path = self.path.split("?")[0]
+        m = _RE_SCENE.match(path)
+        if m and not m.group(2):
+            sid = m.group(1)
+            base = SCENES_DIR / sid
+            if not base.exists():
+                self._send_json(404, {"error": "scene not found"})
+                return
+            shutil.rmtree(base)
+            self._send_json(200, {"deleted": sid})
+            return
+        self.send_error(404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        global _running
+        path = self.path.split("?")[0]
+
+        if path == "/api/master/upload":
+            ctype = self.headers.get("Content-Type", "")
+            body = self._read_body()
+            try:
+                parts = _parse_multipart(body, ctype) if "multipart" in ctype else {"image": body}
+                image = parts.get("image")
+                if not image:
+                    self._send_json(400, {"error": "no image field"})
+                    return
+            except Exception as e:
+                self._send_json(400, {"error": f"upload parse failed: {e}"})
+                return
+            with _lock:
+                if _running:
+                    self._send_json(409, {"error": "generation already in progress"})
+                    return
+                _running = True
+            threading.Thread(target=_kickoff_upload, args=(image,), daemon=True).start()
+            self._send_json(202, {"started": True})
+            return
+
+        if path == "/api/master/generate":
+            payload = self._read_json()
+            if payload is None: return
+            prompt = (payload.get("prompt") or "").strip()
+            if not prompt:
+                self._send_json(400, {"error": "prompt required"})
+                return
+            with _lock:
+                if _running:
+                    self._send_json(409, {"error": "generation already in progress"})
+                    return
+                _running = True
+            threading.Thread(target=_kickoff_master_only, args=(prompt,), daemon=True).start()
+            self._send_json(202, {"started": True})
+            return
+
+        if path == "/api/boxes":
+            payload = self._read_json()
+            if payload is None: return
+            boxes = payload.get("boxes")
+            if not isinstance(boxes, list):
+                self._send_json(400, {"error": "boxes must be a list"})
+                return
+            _write_json(BOXES_FILE, boxes)
+            self._send_json(200, {"saved": len(boxes)})
+            return
+
+        if path == "/api/generate":
+            payload = self._read_json()
+            if payload is None: return
+            boxes = payload.get("boxes")
+            if not isinstance(boxes, list) or not boxes:
+                self._send_json(400, {"error": "at least one box required"})
+                return
+            _write_json(BOXES_FILE, boxes)
+            with _lock:
+                if _running:
+                    self._send_json(409, {"error": "generation already in progress"})
+                    return
+                _running = True
+            prompt = payload.get("prompt") or ""
+            threading.Thread(
+                target=_kickoff_full,
+                args=(prompt, json.dumps(boxes)),
+                daemon=True,
+            ).start()
+            self._send_json(202, {"started": True})
+            return
+
+        if path == "/api/share/start":
+            port = int(os.environ.get("PORT", "8000"))
+            st = _start_tunnel(port)
+            # Allow ~6s for the URL to appear (cloudflared usually prints it within 2-4s).
+            import time as _t
+            for _ in range(60):
+                if st.get("url") or st.get("error"):
+                    break
+                _t.sleep(0.1)
+                st = _tunnel_status()
+            self._send_json(200, st)
+            return
+
+        if path == "/api/share/stop":
+            self._send_json(200, _stop_tunnel())
+            return
+
+        if path == "/api/character-edit":
+            payload = self._read_json()
+            if payload is None: return
+            rect = payload.get("rect")
+            mask_b64 = payload.get("mask_png_b64")
+            prompt = (payload.get("prompt") or "").strip()
+            scene_id = payload.get("scene_id")
+            if not isinstance(rect, dict) or not all(k in rect for k in ("x", "y", "w", "h")):
+                self._send_json(400, {"error": "rect {x,y,w,h} requis"}); return
+            if not mask_b64:
+                self._send_json(400, {"error": "mask_png_b64 requis"}); return
+            if not prompt:
+                self._send_json(400, {"error": "prompt requis"}); return
+            with _lock:
+                if _running:
+                    self._send_json(409, {"error": "génération déjà en cours"})
+                    return
+                _running = True
+            threading.Thread(
+                target=_kickoff_character_edit,
+                args=(rect, mask_b64, prompt, scene_id),
+                daemon=True,
+            ).start()
+            self._send_json(202, {"started": True})
+            return
+
+        if path == "/api/regen-box":
+            payload = self._read_json()
+            if payload is None: return
+            box = payload.get("box")
+            opts = payload.get("opts") or {}
+            scene_id = payload.get("scene_id")
+            if not isinstance(box, dict) or "id" not in box:
+                self._send_json(400, {"error": "box (with id) required"})
+                return
+            if not (opts.get("imageB") or opts.get("imageC") or opts.get("dessin")):
+                self._send_json(400, {"error": "select at least one asset to regenerate"})
+                return
+            with _lock:
+                if _running:
+                    self._send_json(409, {"error": "generation already in progress"})
+                    return
+                _running = True
+            threading.Thread(
+                target=_kickoff_regen_box, args=(box, opts, scene_id), daemon=True
+            ).start()
+            self._send_json(202, {"started": True})
+            return
+
+        if path == "/api/scenes":
+            # Save current public/ as a scene.
+            payload = self._read_json()
+            if payload is None: return
+            name = (payload.get("name") or "").strip()
+            if not name:
+                self._send_json(400, {"error": "name required"})
+                return
+            category = (payload.get("category") or "").strip()
+            if not MASTER_PATH.exists() and not (PUBLIC / "master.png").exists():
+                self._send_json(400, {"error": "no master image to snapshot"})
+                return
+            try:
+                meta = _snapshot_current_scene(name, category)
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+                return
+            self._send_json(201, {"scene": meta})
+            return
+
+        # /api/scenes/<id>/load OR /load OR /meta OR /quest/<qid>/generate
+        m = _RE_SCENE.match(path)
+        if m:
+            sid = m.group(1)
+            sub = m.group(3) or ""
+            base = SCENES_DIR / sid
+            if not base.exists():
+                self._send_json(404, {"error": "scene not found"})
+                return
+
+            if sub == "load":
+                ok = _restore_scene(sid)
+                if not ok:
+                    self._send_json(500, {"error": "restore failed"})
+                    return
+                self._send_json(200, {"loaded": sid})
+                return
+
+            if sub == "meta":
+                # Merge-update meta.json
+                payload = self._read_json()
+                if payload is None: return
+                meta = _scene_meta(sid) or {}
+                for key in ("name", "category", "level1_questions", "quests", "boxes"):
+                    if key in payload:
+                        meta[key] = payload[key]
+                meta["updated_at"] = _now_iso()
+                meta["box_count"] = len(meta.get("boxes", []))
+                _write_json(base / "meta.json", meta)
+                # Mirror boxes.json so the player can read it directly.
+                if "boxes" in payload:
+                    _write_json(base / "boxes.json", meta["boxes"])
+                _annotate_quest_images(sid, meta)
+                self._send_json(200, {"updated": True, "meta": meta})
+                return
+
+            if sub == "resnap":
+                meta = _resnap_scene(sid)
+                if not meta:
+                    self._send_json(500, {"error": "resnap failed"})
+                    return
+                self._send_json(200, {"updated": True, "meta": meta})
+                return
+
+            if sub.startswith("quest/") and sub.endswith("/generate"):
+                qid = sub[len("quest/"): -len("/generate")]
+                with _lock:
+                    if _running:
+                        self._send_json(409, {"error": "generation already in progress"})
+                        return
+                    _running = True
+                threading.Thread(target=_kickoff_quest_gen, args=(sid, qid), daemon=True).start()
+                self._send_json(202, {"started": True})
+                return
+
+        self.send_error(404)
+
+    def log_message(self, fmt: str, *args) -> None:
+        if args and isinstance(args[1], str) and args[1].startswith("2"):
+            return
+        super().log_message(fmt, *args)
+
+
+def _lan_ips() -> list[str]:
+    import socket
+    ips: list[str] = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip not in ips:
+            ips.append(ip)
+    except OSError:
+        pass
+    return [ip for ip in ips if not ip.startswith("127.")]
+
+
+def main() -> int:
+    port = int(os.environ.get("PORT", "8000"))
+    bind = os.environ.get("BIND", "0.0.0.0")
+    print(f"serving public/ on http://{bind}:{port}", flush=True)
+    print("  - http://localhost:" + str(port), flush=True)
+    for ip in _lan_ips():
+        print(f"  - http://{ip}:{port}   (accessible from other devices on your LAN)", flush=True)
+    print("Note: Windows firewall may prompt the first time — allow Python on private networks.", flush=True)
+    with ThreadingHTTPServer((bind, port), Handler) as httpd:
+        httpd.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

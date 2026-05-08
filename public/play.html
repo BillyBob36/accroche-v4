@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jeu de formation · Accroche</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --fg: #e5e5e5;
+    --dim: rgba(255,255,255,0.55);
+    --line: rgba(255,255,255,0.1);
+    --accent: rgba(212, 184, 122, 0.95);
+    --accent-soft: rgba(212, 184, 122, 0.18);
+    --good: rgba(80, 227, 164, 0.95);
+    --bad: rgba(255, 110, 110, 0.95);
+  }
+  *, *:before, *:after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ---- Top bar ---- */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 52px;
+    background: rgba(8,8,10,0.85); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; z-index: 30; gap: 12px;
+  }
+  .topbar a, .topbar button {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    color: var(--fg); padding: 6px 12px; border-radius: 6px;
+    font: inherit; font-size: 12px; text-decoration: none; cursor: pointer;
+  }
+  .topbar a:hover, .topbar button:hover { background: rgba(255,255,255,0.12); }
+  .topbar .scene-name {
+    font-size: 13px; color: var(--accent); letter-spacing: 0.02em;
+    flex: 1; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+  .topbar .level-pill {
+    background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .topbar a, .topbar button { white-space: nowrap; flex-shrink: 0; }
+  @media (max-width: 480px) {
+    .topbar .scene-name { display: none; }
+  }
+
+  /* ---- Master scene (used by both levels) ---- */
+  .stage-wrap {
+    position: fixed; inset: 52px 0 0 0;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: #050505;
+  }
+  .stage {
+    position: relative;
+    aspect-ratio: 2560 / 1440;
+    width: min(100vw, calc((100vh - 52px) * 2560 / 1440));
+    height: auto;
+    transition: transform 900ms cubic-bezier(0.2, 0.7, 0.3, 1), filter 800ms ease;
+  }
+  /* mobile portrait: full-height with horizontal scroll */
+  @media (orientation: portrait) {
+    .stage-wrap { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; justify-content: flex-start; }
+    .stage {
+      height: calc(100vh - 52px);
+      width: calc((100vh - 52px) * 2560 / 1440);
+      aspect-ratio: auto;
+      flex-shrink: 0;
+    }
+  }
+  .stage img { width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none; }
+  .stage .quest-layer {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: auto;
+  }
+
+  body.blurred .stage { filter: blur(14px) brightness(0.35); }
+  body.blurred .stage .quest-layer { pointer-events: none; }
+
+  /* shimmering golden contour for quests */
+  .quest-skel { transition: opacity 320ms ease; }
+  .quest-skel path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 8px rgba(212,184,122,0.7));
+    animation: shimmer 2.4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { stroke-opacity: 0.55; filter: drop-shadow(0 0 4px rgba(212,184,122,0.4)); }
+    50%      { stroke-opacity: 1.0;  filter: drop-shadow(0 0 14px rgba(212,184,122,0.95)); }
+  }
+  .quest-hit { fill: rgba(0,0,0,0); cursor: pointer; pointer-events: fill; }
+  .quest-hit.done { cursor: not-allowed; }
+  .quest-skel.done path { animation: none; stroke: rgba(80,227,164,0.7); filter: drop-shadow(0 0 6px rgba(80,227,164,0.5)); }
+
+  /* ---- Brief / score / generic overlay screens ---- */
+  .screen {
+    position: fixed; inset: 52px 0 0 0;
+    background: rgba(8,8,10,0.96);
+    backdrop-filter: blur(12px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 20;
+    padding: 24px;
+    overflow-y: auto;
+  }
+  .screen.shown { display: flex; }
+  .screen .panel {
+    max-width: 640px; width: 100%;
+    background: rgba(20,20,22,0.95);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 36px 32px;
+    text-align: center;
+  }
+  .screen h2 {
+    font-weight: 300; font-size: 24px; letter-spacing: 0.01em;
+    color: var(--accent); margin: 0 0 8px;
+  }
+  .screen p { color: var(--dim); font-size: 14px; line-height: 1.6; margin: 8px 0; }
+  .screen .big { color: var(--fg); font-size: 16px; }
+  .screen .btn {
+    margin-top: 18px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 12px 26px; border-radius: 8px;
+    font: inherit; font-size: 13px; cursor: pointer;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    transition: background 200ms;
+  }
+  .screen .btn:hover { background: rgba(212,184,122,0.32); }
+  .screen .btn.secondary { background: rgba(255,255,255,0.04); border-color: var(--line); color: var(--fg); }
+
+  .timer-ring {
+    width: 120px; height: 120px; margin: 16px auto;
+    position: relative;
+  }
+  .timer-ring svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+  .timer-ring .ring-track { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 6; }
+  .timer-ring .ring-prog  { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round;
+    stroke-dasharray: 346; stroke-dashoffset: 0;
+    transition: stroke-dashoffset 1s linear; }
+  .timer-num {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 300; letter-spacing: 0.04em;
+  }
+
+  /* ---- QCM ---- */
+  .qcm-card {
+    max-width: 640px; width: 100%;
+    background: rgba(20,20,22,0.95);
+    border: 1px solid var(--line);
+    border-radius: 14px; padding: 28px 28px;
+  }
+  .qcm-card h3 {
+    font-weight: 400; font-size: 17px;
+    color: var(--fg); margin: 0 0 6px; line-height: 1.4;
+  }
+  .qcm-progress { font-size: 11px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 18px; }
+  .qcm-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .qcm-choice {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 16px;
+    color: var(--fg); font-size: 14px;
+    cursor: pointer; text-align: left;
+    transition: background 150ms, border-color 150ms;
+    line-height: 1.4;
+  }
+  .qcm-choice:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+  .qcm-choice.picked.good { background: rgba(80,227,164,0.16); border-color: var(--good); color: var(--good); }
+  .qcm-choice.picked.bad  { background: rgba(255,110,110,0.16); border-color: var(--bad);  color: var(--bad); }
+  .qcm-choice.was-correct { border-color: var(--good); }
+  .qcm-choice:disabled { cursor: default; }
+  .qcm-explain {
+    margin-top: 18px; padding: 14px 16px;
+    background: rgba(212,184,122,0.07);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    color: var(--fg); font-size: 13px; line-height: 1.6;
+    text-align: left;
+    display: none;
+  }
+  .qcm-explain.shown { display: block; }
+  .qcm-next {
+    margin-top: 18px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 22px; border-radius: 8px;
+    font: inherit; font-size: 12px; cursor: pointer;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    display: none;
+  }
+  .qcm-next.shown { display: inline-block; }
+
+  /* ---- Quest interaction ---- */
+  .quest-overlay {
+    position: fixed; inset: 0;
+    background: rgba(5,5,8,0.96);
+    z-index: 40;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .quest-overlay.shown { display: flex; }
+  .quest-img-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .quest-img-wrap img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain; cursor: pointer;
+    transition: opacity 320ms ease;
+    user-select: none;
+  }
+  .quest-img-wrap img.fade-out { opacity: 0; }
+  .quest-caption {
+    position: absolute; left: 16px; right: 16px; bottom: 16px;
+    background: rgba(8,8,10,0.78); backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px; line-height: 1.5;
+    color: var(--fg);
+    max-width: 720px; margin: 0 auto;
+    pointer-events: none;
+  }
+  .quest-actions {
+    margin-top: 12px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .quest-actions .badge { font-size: 11px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .talk-btn {
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 12px 28px; border-radius: 999px;
+    font: inherit; font-size: 13px; cursor: pointer;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    transition: background 200ms;
+    box-shadow: 0 0 24px rgba(212,184,122,0.25);
+  }
+  .talk-btn:hover { background: rgba(212,184,122,0.35); }
+  .img-arrow {
+    background: rgba(255,255,255,0.1); border: 1px solid var(--line);
+    color: var(--fg);
+    width: 38px; height: 38px; border-radius: 50%;
+    cursor: pointer; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .img-arrow:hover { background: rgba(255,255,255,0.2); }
+
+  /* ---- Dialogue modal ---- */
+  .dialogue {
+    position: fixed; inset: 0;
+    background: rgba(5,5,8,0.4);
+    backdrop-filter: blur(6px);
+    z-index: 50;
+    display: none;
+    align-items: flex-end; justify-content: center;
+    padding: 20px;
+  }
+  .dialogue.shown { display: flex; }
+  .dialogue-card {
+    width: 100%; max-width: 600px;
+    background: rgba(20,20,22,0.94);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(212,184,122,0.4);
+    border-radius: 14px;
+    padding: 24px 22px;
+    color: var(--fg);
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.55);
+  }
+  .dialogue-card h4 {
+    margin: 0 0 14px;
+    font-weight: 400; font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+  .dialogue-choice {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--fg); font-size: 13px; line-height: 1.4;
+    text-align: left; cursor: pointer;
+    margin-bottom: 8px;
+    transition: background 150ms, border-color 150ms;
+  }
+  .dialogue-choice:hover:not(:disabled) {
+    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.18);
+  }
+  .dialogue-choice.picked.best { background: rgba(80,227,164,0.16); border-color: var(--good); color: var(--good); }
+  .dialogue-choice.picked.notbest { background: rgba(255,255,255,0.04); border-color: var(--line); color: var(--dim); }
+  .dialogue-feedback {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: rgba(212,184,122,0.08);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    font-size: 13px; line-height: 1.6;
+    display: none;
+  }
+  .dialogue-feedback.shown { display: block; }
+  .dialogue-close {
+    margin-top: 14px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 22px; border-radius: 8px;
+    font: inherit; font-size: 12px; cursor: pointer;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    display: none;
+  }
+  .dialogue-close.shown { display: inline-block; }
+
+  /* ---- HUD: quest counter ---- */
+  .quest-counter {
+    position: fixed; top: 64px; right: 16px;
+    background: rgba(8,8,10,0.8); backdrop-filter: blur(6px);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 8px 14px; border-radius: 999px;
+    font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+    z-index: 25;
+    display: none;
+  }
+  .quest-counter.shown { display: block; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="library.html">← Bibliothèque</a>
+  <div class="scene-name" id="scene-name"></div>
+  <div class="level-pill" id="level-pill">Préparation</div>
+</div>
+
+<!-- master stage (used in both levels) -->
+<div class="stage-wrap" id="stage-wrap">
+  <div class="stage" id="stage">
+    <img id="master" src="" alt="">
+    <svg class="quest-layer" id="quest-layer" viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+</div>
+
+<div class="quest-counter" id="quest-counter"></div>
+
+<!-- Brief / observation timer / score / quest brief -->
+<div class="screen" id="screen">
+  <div class="panel" id="screen-panel"></div>
+</div>
+
+<!-- Quest interaction overlay -->
+<div class="quest-overlay" id="quest-overlay">
+  <div class="quest-img-wrap" id="quest-img-wrap">
+    <img id="quest-img" src="" alt="">
+    <div class="quest-caption" id="quest-caption" style="display:none;"></div>
+  </div>
+  <div class="quest-actions" id="quest-actions"></div>
+</div>
+
+<!-- Dialogue modal -->
+<div class="dialogue" id="dialogue">
+  <div class="dialogue-card">
+    <h4 id="dialogue-title">Que dites-vous ?</h4>
+    <div id="dialogue-choices"></div>
+    <div class="dialogue-feedback" id="dialogue-feedback"></div>
+    <button class="dialogue-close" id="dialogue-close">Continuer</button>
+  </div>
+</div>
+
+<script src="play.js"></script>
+</body>
+</html>

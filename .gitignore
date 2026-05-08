@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Génération transient
+public/.gen_status.json
+public/.tunnel.log
+.tunnel.log
+
+# Sorties d'expérimentation locale (les modules sauvegardés sous public/scenes/
+# restent versionnés ; les sorties brutes du pipeline sont éphémères et lourdes,
+# elles seront régénérées quand on cliquera sur « Régénérer la scène »)
+# On garde quand même les modules + master + assets pour démarrer en marche.

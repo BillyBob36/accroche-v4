@@ -1,0 +1,15 @@
+{
+  "id": "6",
+  "subject": " cette femme.",
+  "aspect": "2:3",
+  "crop_in_master": {
+    "x": 1742.51,
+    "y": 388.97,
+    "w": 353.08,
+    "h": 529.62
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1536
+  }
+}

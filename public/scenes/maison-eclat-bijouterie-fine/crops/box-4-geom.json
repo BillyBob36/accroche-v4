@@ -1,0 +1,15 @@
+{
+  "id": "4",
+  "subject": "La Dame aux cheveux blancs Qui regarde vers la gauche.",
+  "aspect": "2:3",
+  "crop_in_master": {
+    "x": 1155.75,
+    "y": 305.47,
+    "w": 262.25,
+    "h": 393.37
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1536
+  }
+}

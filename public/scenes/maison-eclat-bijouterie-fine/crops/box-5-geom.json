@@ -1,0 +1,15 @@
+{
+  "id": "5",
+  "subject": "Les trois clients, la vendeuse et le bijou.",
+  "aspect": "1:1",
+  "crop_in_master": {
+    "x": 940.38,
+    "y": 547.78,
+    "w": 839.48,
+    "h": 839.48
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1024
+  }
+}

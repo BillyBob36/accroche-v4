@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Accroche — debug pipeline</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #0a0a0a;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #ccc; font-size: 13px;
+  }
+  body { padding: 20px; }
+  h1 { font-size: 16px; margin: 0 0 6px; color: white; font-weight: 500; letter-spacing: 0.04em; }
+  .legend { color: #888; margin-bottom: 18px; font-size: 12px; }
+  .legend .swatch { display: inline-block; width: 14px; height: 14px; vertical-align: middle; margin: 0 4px 0 14px; border: 2px solid; }
+  .legend .box { border-color: #50e3a4; }
+  .legend .draw { border-color: #ffb84d; }
+  .row {
+    display: grid;
+    grid-template-columns: 80px repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .row-label {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    color: #888;
+  }
+  .row-label .id { font-size: 22px; font-weight: 500; }
+  .row-label .subj { font-size: 10px; margin-top: 4px; max-width: 70px; line-height: 1.2; opacity: 0.7; }
+  .cell { display: flex; flex-direction: column; gap: 6px; }
+  .cell-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; font-weight: 500; }
+  .cell-meta { font-size: 10px; color: #666; font-variant-numeric: tabular-nums; }
+  .frame {
+    position: relative;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .frame img { display: block; width: 100%; height: auto; }
+  .frame svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .box-rect { fill: none; stroke: #50e3a4; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .draw-rect { fill: none; stroke: #ffb84d; stroke-width: 2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .skel-overlay path {
+    fill: none; stroke: white; stroke-width: 1.5;
+    stroke-linecap: round; stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .nav {
+    position: fixed; top: 14px; right: 14px;
+    color: rgba(255, 255, 255, 0.6); text-decoration: none;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 8px 12px; border-radius: 8px; font-size: 12px;
+    z-index: 10;
+  }
+  .nav:hover { color: white; }
+  .empty { color: #666; padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<a class="nav" href="/">← retour</a>
+<h1>Pipeline debug — alignement par cadre</h1>
+<div class="legend">
+  <span class="swatch box"></span>cadre utilisateur (la fenêtre envoyée à GPT)
+  <span class="swatch draw"></span>bbox réelle du dessin GPT (où GPT a tracé)
+</div>
+
+<div id="grid"></div>
+
+<script>
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const MASTER_W = 2560, MASTER_H = 1440;
+
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) e.appendChild(c);
+  return e;
+}
+function svgEl(tag, attrs = {}, children = []) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  for (const c of children) e.appendChild(c);
+  return e;
+}
+async function loadImg(src) {
+  const i = new Image();
+  i.crossOrigin = 'anonymous';
+  i.src = src;
+  await i.decode();
+  return i;
+}
+async function findDrawingBbox(src) {
+  const img = await loadImg(src);
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let xMin = c.width, yMin = c.height, xMax = -1, yMax = -1;
+  for (let y = 0; y < c.height; y++) {
+    const row = y * c.width * 4;
+    for (let x = 0; x < c.width; x++) {
+      const idx = row + x * 4;
+      if (d[idx] + d[idx+1] + d[idx+2] < 600) {
+        if (x < xMin) xMin = x;
+        if (x > xMax) xMax = x;
+        if (y < yMin) yMin = y;
+        if (y > yMax) yMax = y;
+      }
+    }
+  }
+  return xMax < 0 ? null : { x: xMin, y: yMin, w: xMax - xMin + 1, h: yMax - yMin + 1 };
+}
+function frame(viewBox, content) {
+  const svg = svgEl('svg', { viewBox, preserveAspectRatio: 'xMidYMid meet' });
+  for (const c of content) svg.appendChild(c);
+  return svg;
+}
+function imgFrame(src, viewBox, overlays = []) {
+  const f = el('div', { class: 'frame' });
+  f.appendChild(el('img', { src }));
+  if (overlays.length) f.appendChild(frame(viewBox, overlays));
+  return f;
+}
+
+async function fetchSkelGroup(boxId) {
+  try {
+    const txt = await (await fetch(`lineart-svg/box-${boxId}-skel.svg?t=${Date.now()}`)).text();
+    const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
+    const g = doc.querySelector('g');
+    return g ? g.cloneNode(true) : null;
+  } catch (e) { return null; }
+}
+
+async function buildRow(box) {
+  const stamp = `?t=${Date.now()}`;
+  const boxId = String(box.id);
+  let geom = null;
+  try {
+    geom = await (await fetch(`crops/box-${boxId}-geom.json${stamp}`)).json();
+  } catch (e) {}
+  const target = geom?.target_size || { w: 1024, h: 1536 };
+  const linePath = `crops/box-${boxId}-line.png${stamp}`;
+  const drawBbox = await findDrawingBbox(linePath).catch(() => null);
+  const skelGroup = await fetchSkelGroup(boxId);
+
+  const row = el('div', { class: 'row' });
+
+  // Row label
+  const lbl = el('div', { class: 'row-label' });
+  lbl.appendChild(el('div', { class: 'id', text: boxId }));
+  lbl.appendChild(el('div', { class: 'subj', text: box.subject || '(no subject)' }));
+  lbl.appendChild(el('div', { class: 'subj', text: box.aspect }));
+  row.appendChild(lbl);
+
+  // Cell 1 — master with the user-drawn box outlined
+  row.appendChild(el('div', { class: 'cell' }, [
+    el('div', { class: 'cell-title', text: '1. master + cadre' }),
+    el('div', { class: 'cell-meta', text: `box (${Math.round(box.x)},${Math.round(box.y)}, ${Math.round(box.w)}×${Math.round(box.h)})` }),
+    imgFrame(`master.png${stamp}`, `0 0 ${MASTER_W} ${MASTER_H}`, [
+      svgEl('rect', { class: 'box-rect', x: box.x, y: box.y, width: box.w, height: box.h }),
+    ]),
+  ]));
+
+  // Cell 2 — input crop sent to GPT (target_size: 1024×1024 / 1024×1536 / 1536×1024)
+  row.appendChild(el('div', { class: 'cell' }, [
+    el('div', { class: 'cell-title', text: `2. input → GPT (${target.w}×${target.h})` }),
+    el('div', { class: 'cell-meta', text: 'pixels du master rééchantillonnés' }),
+    imgFrame(`crops/box-${boxId}-input.png${stamp}`, `0 0 ${target.w} ${target.h}`, []),
+  ]));
+
+  // Cell 3 — raw GPT output (photo + magenta tracing)
+  row.appendChild(el('div', { class: 'cell' }, [
+    el('div', { class: 'cell-title', text: '3. GPT raw (photo + magenta)' }),
+    el('div', { class: 'cell-meta', text: 'sortie brute avant extraction' }),
+    imgFrame(`crops/box-${boxId}-raw.png${stamp}`, `0 0 ${target.w} ${target.h}`, []),
+  ]));
+
+  // Cell 4 — extracted line-art (after diff with original) + drawing bbox in orange
+  const overlays4 = [];
+  let drawMeta = 'aucun pixel détecté';
+  if (drawBbox) {
+    overlays4.push(svgEl('rect', { class: 'draw-rect',
+      x: drawBbox.x, y: drawBbox.y, width: drawBbox.w, height: drawBbox.h }));
+    drawMeta = `dessiné (${drawBbox.x},${drawBbox.y}, ${drawBbox.w}×${drawBbox.h}) / canvas ${target.w}×${target.h}`;
+  }
+  row.appendChild(el('div', { class: 'cell' }, [
+    el('div', { class: 'cell-title', text: '4. lignes extraites (orange = bbox)' }),
+    el('div', { class: 'cell-meta', text: drawMeta }),
+    imgFrame(linePath, `0 0 ${target.w} ${target.h}`, overlays4),
+  ]));
+
+  // Cell 4 — final composite: skel placed on master + user box outline
+  const finalSvg = svgEl('svg', {
+    viewBox: `0 0 ${MASTER_W} ${MASTER_H}`,
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+  if (skelGroup) {
+    skelGroup.setAttribute('class', 'skel-overlay');
+    skelGroup.removeAttribute('stroke');
+    finalSvg.appendChild(skelGroup);
+  }
+  finalSvg.appendChild(svgEl('rect', { class: 'box-rect', x: box.x, y: box.y, width: box.w, height: box.h }));
+  const finalFrame = el('div', { class: 'frame' });
+  finalFrame.appendChild(el('img', { src: `master.png${stamp}` }));
+  finalFrame.appendChild(finalSvg);
+  row.appendChild(el('div', { class: 'cell' }, [
+    el('div', { class: 'cell-title', text: '5. master + skel placé (final)' }),
+    el('div', { class: 'cell-meta', text: 'contour blanc = skel SVG sur master' }),
+    finalFrame,
+  ]));
+
+  return row;
+}
+
+(async () => {
+  const grid = document.getElementById('grid');
+  let boxes = [];
+  try {
+    boxes = (await (await fetch('/api/boxes?t=' + Date.now())).json()).boxes || [];
+  } catch (e) {}
+
+  if (!boxes.length) {
+    grid.appendChild(el('div', { class: 'empty', text: 'aucun cadre — trace-en sur la page principale puis relance la génération' }));
+    return;
+  }
+
+  for (const box of boxes) {
+    try {
+      grid.appendChild(await buildRow(box));
+    } catch (err) {
+      grid.appendChild(el('div', { class: 'row', text: `box-${box.id}: error — ${err.message}` }));
+    }
+  }
+})();
+</script>
+</body>
+</html>

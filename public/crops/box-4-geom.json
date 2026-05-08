@@ -1,0 +1,15 @@
+{
+  "id": "4",
+  "subject": "Le monsieur \u00e2g\u00e9 en blazer marine portant une caisse de vins.",
+  "aspect": "2:3",
+  "crop_in_master": {
+    "x": 1711.36,
+    "y": 167.04,
+    "w": 848.64,
+    "h": 1272.96
+  },
+  "target_size": {
+    "w": 1024,
+    "h": 1536
+  }
+}

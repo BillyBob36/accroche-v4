@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Accroche</title>
+<style>
+  :root {
+    --glow-r: 0px;
+    --glow-a: 0;
+    --stroke-w: 3;
+    --stroke-opacity: 0.92;
+  }
+
+  /* Reset global : tous les éléments respectent le border-box, indispensable
+     pour des layouts responsives sans débordements horizontaux fantômes. */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #0a0a0a;
+    height: 100%;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #999;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  /* ----- master scene -----
+     The stage handles the horizontal PAN (camera tracking the clicked box
+     quickly into view). The inner .zoom-inner element handles the SCALE +
+     opacity fade. Splitting them lets us use distinct timings: the camera
+     pans quickly so the box is roughly centered before the zoom finishes,
+     instead of arriving at the very end. */
+  .stage {
+    position: relative;
+    aspect-ratio: 2560 / 1440;
+    width: min(100vw, calc(100vh * 2560 / 1440));
+    height: auto;
+    z-index: 1;
+    transition: transform 900ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    will-change: transform;
+  }
+  body.state-imageB .stage,
+  body.state-imageC .stage { pointer-events: none; }
+
+  .zoom-inner {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    transform-origin: 0 0;
+    transition: opacity 500ms ease 0ms, transform 1500ms cubic-bezier(0.6, 0, 0.3, 1);
+    will-change: opacity, transform;
+  }
+  body.state-imageB .zoom-inner,
+  body.state-imageC .zoom-inner {
+    opacity: 0;
+    transition: opacity 500ms ease 1000ms, transform 1500ms cubic-bezier(0.6, 0, 0.3, 1);
+  }
+
+  /* ----- mobile (portrait viewport): full-height image, horizontal scroll ----- */
+  body.mode-mobile { align-items: stretch; justify-content: flex-start; }
+  body.mode-mobile .stage {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100vh;
+    width: calc(100vh * 2560 / 1440);
+    aspect-ratio: auto;
+    touch-action: none;
+  }
+
+  .zoom-inner > img,
+  .zoom-inner > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .zoom-inner > img { pointer-events: none; }
+  #contour-layer { pointer-events: none; }
+
+  /* ----- contour skel ----- */
+  .skel-group path {
+    fill: none;
+    stroke: white;
+    stroke-width: var(--stroke-w);
+    stroke-opacity: var(--stroke-opacity);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    opacity: 0;
+    transition: opacity 320ms ease;
+  }
+  .skel-group.active path { opacity: 1; }
+  /* Glow on the parent <g> so the drop-shadow composites the whole group as
+     one layer (one filter pass, not 100+). */
+  .skel-group.active {
+    filter: drop-shadow(0 0 var(--glow-r) rgba(255, 255, 255, var(--glow-a)));
+    will-change: filter;
+  }
+  body.no-glow .skel-group.active { filter: none; }
+
+  /* ----- hit zones (home mode only) ----- */
+  .hit-rect {
+    fill: rgba(0, 0, 0, 0);
+    stroke: none;
+    pointer-events: none;  /* off by default — explicit child override would beat parent's */
+    cursor: pointer;
+  }
+  body.state-home .hit-rect { pointer-events: fill; }
+  body.state-editor #hit-layer { display: none; }
+  body.state-editor .zoom-inner > img { pointer-events: auto; cursor: crosshair; }
+
+  /* ----- editor layer ----- */
+  #editor-layer { display: none; }
+  body.state-editor #editor-layer { display: block; }
+  .editor-box-fill {
+    fill: rgba(80, 227, 164, 0.08);
+    stroke: rgba(80, 227, 164, 0.95);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    cursor: move;
+    pointer-events: fill;
+  }
+  .editor-box-fill.selected {
+    fill: rgba(255, 184, 77, 0.12);
+    stroke: rgba(255, 184, 77, 0.98);
+    stroke-width: 3;
+  }
+  .editor-handle {
+    fill: white;
+    stroke: rgba(0, 0, 0, 0.5);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    cursor: nwse-resize;
+    pointer-events: fill;
+  }
+  .editor-label {
+    fill: rgba(0, 0, 0, 0.65);
+    font-size: 28px;
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .editor-label-text { fill: white; }
+
+  /* ----- showcase ----- */
+  /* Sits BEHIND the stage. The destination image is loaded and visible at click time;
+     the stage (zooming + fading) reveals it as it disappears. */
+  #showcase {
+    position: fixed; inset: 0;
+    background: #050505;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 0;
+    cursor: pointer;
+    pointer-events: none;
+  }
+  body.state-imageB #showcase, body.state-imageC #showcase {
+    pointer-events: auto;
+  }
+  .show-img {
+    position: absolute;
+    max-width: 92vw; max-height: 92vh;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 350ms ease;
+    pointer-events: none; user-select: none;
+  }
+  .show-img.shown { opacity: 1; }
+
+  /* Mobile: image always fills the screen height; if wider than viewport, the
+     showcase becomes horizontally scrollable. `safe center` keeps the image
+     centered when it fits, but falls back to flex-start when it overflows so
+     the user can scroll all the way to either edge. */
+  body.mode-mobile #showcase {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    justify-content: safe center;
+  }
+  body.mode-mobile .show-img {
+    position: relative;
+    height: 100vh;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    flex-shrink: 0;
+    object-fit: contain;
+    display: none;
+  }
+  body.mode-mobile .show-img.shown { display: block; }
+
+  /* ----- status badge ----- */
+  #status {
+    position: fixed; bottom: 12px; left: 12px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 4px 8px; border-radius: 4px;
+    pointer-events: none; color: #999;
+    z-index: 11;
+  }
+
+  /* ----- settings ----- */
+  #settings-btn {
+    position: fixed; top: 14px; right: 14px;
+    width: 40px; height: 40px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 50%;
+    color: #ddd; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 200ms, transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 11; padding: 0;
+  }
+  #settings-btn:hover { background: rgba(255, 255, 255, 0.12); transform: rotate(60deg); }
+  #settings-btn.open { transform: rotate(90deg); }
+  body.state-imageB #settings-btn, body.state-imageC #settings-btn,
+  body.state-editor #settings-btn { opacity: 0; pointer-events: none; }
+
+  #settings-panel {
+    position: fixed; top: 64px; right: 14px;
+    background: rgba(20, 20, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #ddd; font-size: 13px;
+    width: 320px;
+    display: none;
+    z-index: 11;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    max-height: calc(100vh - 84px);
+    overflow-y: auto;
+  }
+  #settings-panel.open { display: block; }
+  /* On mobile, take more screen real-estate and use bigger touch targets. */
+  body.mode-mobile #settings-panel {
+    width: min(92vw, 380px);
+    right: 4vw;
+    top: 76px;
+    padding: 18px 18px 22px;
+    font-size: 14px;
+  }
+  body.mode-mobile #settings-panel input[type="range"] { height: 32px; }
+  body.mode-mobile #settings-panel .btn { padding: 14px; font-size: 13px; }
+  body.mode-mobile #settings-btn {
+    width: 48px; height: 48px;
+    top: 14px; right: 14px;
+  }
+
+  .section-title {
+    margin: 14px 0 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.45);
+    font-weight: 500;
+  }
+  .section-title:first-child { margin-top: 4px; }
+  hr {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin: 14px 0 4px;
+  }
+
+  .field { margin: 8px 0; }
+  .field-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .field-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.55); font-weight: 500;
+  }
+  .field-value {
+    font-size: 11px; color: rgba(255, 255, 255, 0.4);
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] { width: 100%; accent-color: white; cursor: pointer; }
+
+  textarea, input[type=text] {
+    width: 100%; box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: #ddd;
+    font-family: inherit; font-size: 12px; line-height: 1.45;
+    padding: 8px 10px;
+    resize: vertical;
+  }
+  textarea { min-height: 100px; }
+  textarea:focus, input[type=text]:focus { outline: none; border-color: rgba(255, 255, 255, 0.3); }
+
+  .btn {
+    width: 100%; padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    color: white; font-size: 12px; font-weight: 500;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    cursor: pointer; transition: background 200ms;
+    margin-top: 6px;
+  }
+  .btn.primary { background: rgba(80, 227, 164, 0.2); border-color: rgba(80, 227, 164, 0.5); }
+  .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+  .btn.primary:hover:not(:disabled) { background: rgba(80, 227, 164, 0.32); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 6px; }
+  .btn-row .btn { flex: 1; margin-top: 0; }
+
+  /* ----- editor toolbar ----- */
+  #editor-toolbar {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 20, 22, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 8px;
+    display: none;
+    gap: 6px; align-items: center;
+    z-index: 12;
+  }
+  body.state-editor #editor-toolbar { display: flex; }
+  #editor-toolbar button {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: #ddd; padding: 8px 12px;
+    font-size: 12px; cursor: pointer;
+    font-family: inherit;
+    transition: background 150ms;
+  }
+  #editor-toolbar button:hover { background: rgba(255, 255, 255, 0.16); }
+  #editor-toolbar button.active { background: rgba(80, 227, 164, 0.25); border-color: rgba(80, 227, 164, 0.5); color: white; }
+  #editor-toolbar .sep { width: 1px; background: rgba(255, 255, 255, 0.1); align-self: stretch; margin: 0 4px; }
+  #editor-toolbar button.primary { background: rgba(80, 227, 164, 0.2); border-color: rgba(80, 227, 164, 0.5); }
+
+  /* ----- box panel (right side desktop / bottom-sheet mobile) ----- */
+  #box-panel {
+    position: fixed; top: 64px; right: 14px;
+    width: 320px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    background: rgba(20, 20, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #ddd; font-size: 13px;
+    display: none;
+    z-index: 12;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  }
+  body.state-editor #box-panel.shown { display: block; }
+
+  .box-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .box-panel-title {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: rgba(255, 184, 77, 0.85); font-weight: 500;
+  }
+  .box-panel-close {
+    background: transparent; border: 0; color: rgba(255,255,255,0.5);
+    cursor: pointer; font-size: 24px; line-height: 1;
+    padding: 4px 8px; margin: -4px -8px;
+    border-radius: 6px;
+    min-width: 32px; min-height: 32px;
+  }
+  .box-panel-close:hover { color: white; background: rgba(255,255,255,0.06); }
+
+  /* Sections accordéon (<details>) */
+  .bp-section {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 4px 0;
+  }
+  .bp-section:first-of-type { border-top: 0; }
+  .bp-section > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 10px 0;
+    font-size: 12px;
+    color: rgba(255,255,255,0.85);
+    letter-spacing: 0.02em;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    transition: color 150ms;
+  }
+  .bp-section > summary::-webkit-details-marker { display: none; }
+  .bp-section > summary::before {
+    content: '›';
+    color: rgba(255,255,255,0.4);
+    font-size: 16px;
+    margin-right: 4px;
+    transition: transform 200ms;
+    flex-shrink: 0;
+  }
+  .bp-section[open] > summary::before { transform: rotate(90deg); }
+  .bp-section > summary:hover { color: white; }
+  .bp-summary-hint {
+    color: rgba(255,255,255,0.45);
+    font-size: 11px;
+    font-weight: 400;
+    text-align: right;
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bp-content {
+    padding: 4px 0 12px;
+  }
+  .bp-help {
+    font-size: 10px; color: rgba(255,255,255,0.45);
+    margin-top: 4px; line-height: 1.4;
+  }
+  .bp-section select, .bp-section textarea, .bp-section input[type="text"] {
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    color: #ddd;
+    font-family: inherit; font-size: 12px;
+    padding: 8px;
+  }
+  .bp-section-static {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 8px;
+  }
+  .bp-static-title {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.55);
+    margin-bottom: 8px;
+  }
+  #regen-options {
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .box-panel-delete {
+    margin-top: 14px !important;
+    background: transparent !important;
+    border: 1px dashed rgba(255,80,80,0.4) !important;
+    color: rgba(255,120,120,0.85) !important;
+    font-size: 11px !important;
+  }
+  .box-panel-delete:hover {
+    background: rgba(255,80,80,0.1) !important;
+    color: rgba(255,160,160,1) !important;
+  }
+
+  /* Sur mobile : box-panel devient un bottom-sheet plein largeur */
+  body.mode-mobile #box-panel {
+    top: auto; right: 0; left: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 14px 14px 0 0;
+    border-left: 0; border-right: 0; border-bottom: 0;
+    padding: 16px 18px 24px;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+    /* Petite "poignée" visuelle façon bottom sheet */
+  }
+  body.mode-mobile #box-panel::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 999px;
+    margin: -4px auto 8px;
+  }
+  body.mode-mobile #box-panel .bp-section > summary,
+  body.mode-mobile #box-panel .bp-section-static,
+  body.mode-mobile #box-panel .btn,
+  body.mode-mobile #box-panel .box-panel-close {
+    min-height: 44px;          /* WCAG 2.2 + Apple HIG */
+  }
+  body.mode-mobile #box-panel .btn {
+    padding: 14px 16px;
+    font-size: 13px;
+  }
+  body.mode-mobile #box-panel select,
+  body.mode-mobile #box-panel textarea {
+    font-size: 14px;           /* évite le zoom auto iOS */
+    padding: 12px;
+  }
+
+  /* ----- generation overlay ----- */
+  #gen-overlay {
+    position: fixed; inset: 0;
+    background: rgba(8, 8, 10, 0.94);
+    backdrop-filter: blur(14px);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    z-index: 50; color: white; padding: 0 20px;
+  }
+  #gen-overlay.open { display: flex; }
+  .gen-spinner {
+    width: 48px; height: 48px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 28px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .gen-step { font-size: 14px; color: rgba(255, 255, 255, 0.85); margin-bottom: 10px; text-align: center; max-width: 520px; }
+  .gen-progress { font-size: 11px; color: rgba(255, 255, 255, 0.45); letter-spacing: 0.08em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+  .gen-error { color: #ff8a8a; margin-top: 16px; font-size: 12px; max-width: 520px; text-align: center; }
+
+  input[type=file] { display: none; }
+
+  /* ----- mobile slider (custom, sober) ----- */
+  #m-slider {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(86vw, 480px);
+    height: 64px;
+    z-index: 12;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  body.mode-mobile.state-home #m-slider { display: flex; pointer-events: auto; }
+
+  #m-slider-track {
+    position: absolute;
+    inset: 24px 32px;
+    background: #0f0f0f;
+    border-radius: 999px;
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  #m-slider-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 48px;
+    height: 48px;
+    margin-top: -24px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #1c1c1e 0%, #0a0a0a 100%);
+    box-shadow:
+      0 6px 14px rgba(0, 0, 0, 0.7),
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 0 0 1px rgba(255, 255, 255, 0.04);
+    cursor: grab;
+    transition: transform 120ms ease;
+  }
+  #m-slider-thumb:active, #m-slider.dragging #m-slider-thumb { cursor: grabbing; transform: scale(1.05); }
+
+  /* ----- modals (authoring) ----- */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(8, 8, 10, 0.75);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 60;
+    padding: 20px;
+  }
+  .modal-overlay.shown { display: flex; }
+  .modal {
+    background: rgba(20, 20, 22, 0.98);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 22px 24px;
+    color: #ddd;
+    font-size: 13px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  /* Sur mobile : modale en bottom-sheet (slide depuis le bas, prend toute la
+     largeur). Pattern recommandé Material Design / iOS. */
+  body.mode-mobile .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  body.mode-mobile .modal {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    border-left: 0; border-right: 0; border-bottom: 0;
+    padding: 18px 18px 28px;
+    animation: slideUp 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  body.mode-mobile .modal::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 999px;
+    margin: -6px auto 12px;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+  body.mode-mobile .modal .btn,
+  body.mode-mobile .modal button:not(.choice-mark):not(.choice-del) {
+    min-height: 44px;
+  }
+  body.mode-mobile .modal textarea,
+  body.mode-mobile .modal input[type="text"],
+  body.mode-mobile .modal select {
+    font-size: 14px;   /* > 13 px évite le zoom auto sur iOS */
+  }
+  .modal h3 {
+    margin: 0 0 18px;
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    color: rgba(212, 184, 122, 0.95);
+  }
+  .modal-actions {
+    display: flex; gap: 8px; margin-top: 20px;
+  }
+  .modal-actions .btn { flex: 1; margin-top: 0; }
+
+  .choice-row {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .choice-row.is-correct { border-color: rgba(80, 227, 164, 0.5); background: rgba(80,227,164,0.06); }
+  .choice-row.is-best { border-color: rgba(212, 184, 122, 0.6); background: rgba(212,184,122,0.08); }
+  .choice-mark {
+    width: 24px; height: 24px; flex-shrink: 0;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.4);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    transition: background 150ms;
+  }
+  .choice-row.is-correct .choice-mark { background: rgba(80, 227, 164, 0.35); border-color: rgba(80, 227, 164, 0.7); color: white; }
+  .choice-row.is-best .choice-mark { background: rgba(212, 184, 122, 0.4); border-color: rgba(212, 184, 122, 0.8); color: white; }
+  .choice-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .choice-body input, .choice-body textarea {
+    margin: 0; font-size: 12px; padding: 6px 8px;
+  }
+  .choice-body textarea { min-height: 40px; }
+  .choice-del {
+    background: none; border: none; color: rgba(255,120,120,0.7);
+    cursor: pointer; padding: 4px 6px; font-size: 16px;
+    align-self: flex-start;
+  }
+  .choice-del:hover { color: rgba(255,160,160,1); }
+
+  .quest-chip {
+    background: rgba(212,184,122,0.1); border: 1px solid rgba(212,184,122,0.4);
+    border-radius: 6px; padding: 8px 10px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px;
+  }
+  .quest-chip .qc-title { color: rgba(212,184,122,0.95); font-size: 12px; flex: 1; }
+  .quest-chip .qc-status { font-size: 10px; color: rgba(255,255,255,0.45); letter-spacing: 0.06em; text-transform: uppercase; }
+  .quest-chip button {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
+    color: #ddd; padding: 4px 8px; border-radius: 4px;
+    font: inherit; font-size: 10px; cursor: pointer;
+  }
+  .quest-chip button:hover { background: rgba(255,255,255,0.14); }
+  .quest-chip button.del { color: rgba(255,120,120,0.85); border-color: rgba(255,120,120,0.4); }
+
+  .ql-item {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px; padding: 10px 12px;
+    display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
+  }
+  .ql-item .ql-text { flex: 1; font-size: 12px; line-height: 1.4; }
+  .ql-item .ql-actions { display: flex; gap: 4px; }
+  .ql-item button {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
+    color: #ddd; padding: 4px 8px; border-radius: 4px;
+    font: inherit; font-size: 10px; cursor: pointer;
+  }
+  .ql-item button.del { color: rgba(255,120,120,0.85); border-color: rgba(255,120,120,0.4); }
+
+  .regen-check {
+    display: flex; align-items: center; gap: 8px;
+    color: #ddd; font-size: 12px; cursor: pointer;
+    user-select: none;
+  }
+  .regen-check input[type="checkbox"] {
+    width: 16px; height: 16px;
+    accent-color: rgba(140, 200, 255, 0.95);
+    cursor: pointer; margin: 0;
+  }
+
+  /* ----- aspect-ratio popover ----- */
+  #more-aspects-pop {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 20, 22, 0.98);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 14px 16px;
+    z-index: 13;
+    display: none;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  }
+  #more-aspects-pop.shown { display: block; }
+  .more-aspects-title {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .more-aspects-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(96px, 1fr));
+    gap: 8px;
+  }
+  .more-aspects-grid button {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #ddd; padding: 10px 8px;
+    font: inherit; font-size: 11px;
+    cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    transition: background 150ms, border-color 150ms;
+  }
+  .more-aspects-grid button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(80, 227, 164, 0.5);
+  }
+  .more-aspects-grid button.active {
+    background: rgba(80, 227, 164, 0.2);
+    border-color: rgba(80, 227, 164, 0.7);
+  }
+  .more-aspects-grid button span { font-weight: 500; font-size: 12px; }
+  .more-aspects-grid button em {
+    font-style: normal;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 0.04em;
+  }
+  .ar-shape {
+    width: 36px; height: 28px;
+    aspect-ratio: var(--ar);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  /* For tall aspects, fix the height instead of width so the shape fits the cell */
+  .ar-shape { max-width: 36px; max-height: 36px; width: auto; height: auto; min-width: 12px; min-height: 12px; }
+
+  /* Free-form boxes get a dashed outline in the editor for visual cue */
+  .editor-box-fill.free-form {
+    stroke-dasharray: 8 6;
+  }
+  .editor-handle.free-edge {
+    fill: rgba(80, 227, 164, 0.85);
+  }
+
+  /* ============ TOP-RAIL (rétractable) — remplace l'engrenage ============ */
+  #top-rail {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 14;
+    pointer-events: none;
+  }
+  /* La poignée fine, toujours visible, accroche l'oeil sans surcharger */
+  #top-rail-handle {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    background: rgba(20, 20, 22, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 0;
+    border-radius: 0 0 10px 10px;
+    padding: 6px 22px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    cursor: pointer;
+    transition: background 200ms, color 200ms;
+    user-select: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #top-rail-handle:hover { background: rgba(20,20,22,0.98); color: white; }
+  #top-rail-handle .chev {
+    transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-block;
+  }
+  #top-rail.open #top-rail-handle .chev { transform: rotate(180deg); }
+
+  /* Le panneau du rail qui se déploie */
+  #top-rail-panel {
+    pointer-events: auto;
+    background: rgba(20, 20, 22, 0.96);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.4);
+    transform: translateY(-100%);
+    transition: transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 14px 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #top-rail.open #top-rail-panel { transform: translateY(0); }
+
+  /* Rangée de boutons-outils principaux */
+  .tool-row {
+    display: flex; gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tool-btn {
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: #ddd;
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: background 150ms, border-color 150ms, color 150ms;
+    min-width: 86px;
+    justify-content: center;
+  }
+  .tool-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+  .tool-btn.active {
+    background: rgba(80, 227, 164, 0.2);
+    border-color: rgba(80, 227, 164, 0.6);
+    color: white;
+  }
+  .tool-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  /* Sous-panneau : contenu du module sélectionné */
+  .tool-pane {
+    display: none;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #ddd;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .tool-pane.shown { display: block; }
+  .tool-pane h4 {
+    margin: 0 0 12px;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(255,255,255,0.55); font-weight: 500;
+  }
+
+  body.state-imageB #top-rail,
+  body.state-imageC #top-rail { display: none; }
+
+  /* Sur mobile, le rail prend toute la largeur et le contenu reste lisible */
+  body.mode-mobile #top-rail-panel { padding: 14px 14px 18px; }
+  body.mode-mobile .tool-btn { padding: 12px 12px; font-size: 11px; min-width: 70px; }
+  body.mode-mobile .tool-btn span { display: none; }  /* mobile: pictos seuls */
+  body.mode-mobile #top-rail-handle { padding: 10px 28px; min-height: 44px; }
+  body.mode-mobile .tool-btn { min-height: 44px; }
+
+  /* ----- Toolbar mode édition + perso sur mobile : reste en haut, plus compacte ----- */
+  body.mode-mobile #editor-toolbar,
+  body.mode-mobile #character-toolbar {
+    top: 14px; left: 14px; right: 14px;
+    transform: none;
+    padding: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    z-index: 13;
+  }
+  body.mode-mobile #editor-toolbar button,
+  body.mode-mobile #character-toolbar button {
+    min-height: 44px;
+    padding: 10px 12px;
+    flex: 1 1 auto;
+    font-size: 11px;
+  }
+  body.mode-mobile #editor-toolbar .hint { display: none; }
+  body.mode-mobile #editor-toolbar .sep,
+  body.mode-mobile #character-toolbar .sep {
+    display: none;
+  }
+  body.mode-mobile #character-toolbar input[type="range"] {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  /* Le bottom-sheet du box-panel garde de la place pour la toolbar du haut +
+     n'occulte pas l'image. Hauteur max raisonnable. */
+  body.mode-mobile #box-panel {
+    max-height: 65vh;
+  }
+
+  /* ============ Mode "Personnages" (édition par masque) ============ */
+  #character-layer { display: none; }
+  body.state-character #character-layer { display: block; }
+  body.state-character #hit-layer { display: none; }
+  body.state-character #editor-layer { display: none; }
+  body.state-character .zoom-inner > img { pointer-events: auto; cursor: crosshair; }
+
+  #character-toolbar {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 20, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 8px;
+    display: none;
+    gap: 6px; align-items: center;
+    z-index: 12;
+  }
+  body.state-character #character-toolbar { display: flex; }
+  #character-toolbar button {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: #ddd; padding: 8px 12px;
+    font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  #character-toolbar button:hover { background: rgba(255, 255, 255, 0.16); }
+  #character-toolbar button.active { background: rgba(80, 180, 255, 0.25); border-color: rgba(80, 180, 255, 0.5); color: white; }
+  #character-toolbar .sep { width: 1px; background: rgba(255, 255, 255, 0.12); align-self: stretch; margin: 0 4px; }
+  #character-toolbar input[type=range] {
+    width: 90px; accent-color: rgba(140, 200, 255, 0.95);
+  }
+  #character-toolbar .label-mini { font-size: 10px; color: rgba(255,255,255,0.5); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  /* Cadre dessiné dans le master pour le mode personnage : juste une bordure
+     SVG fine. Le rect SVG ne reçoit JAMAIS d'évenements ; les clics se font
+     soit sur le canvas (peinture), soit sur les poignées HTML (resize/move). */
+  .char-rect {
+    fill: rgba(80, 180, 255, 0.04);
+    stroke: rgba(80, 180, 255, 0.95);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  /* Poignées HTML : positionnées en % par-dessus le rect, taille FIXE en px
+     (donc visibles et facilement clickables quel que soit le zoom). */
+  .char-handle {
+    position: absolute;
+    width: 28px; height: 28px;
+    background: rgba(80, 180, 255, 0.95);
+    border: 2px solid white;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    pointer-events: auto;       /* TOUJOURS clickable (au-dessus du canvas) */
+    cursor: nwse-resize;
+    z-index: 5;
+    transition: transform 120ms ease, background 150ms;
+  }
+  .char-handle:hover { transform: translate(-50%, -50%) scale(1.18); }
+  .char-handle.move { cursor: move; background: rgba(255, 255, 255, 0.95); }
+  .char-handle.right { cursor: ew-resize; }
+  .char-handle.bottom { cursor: ns-resize; }
+  .char-handle.brc { cursor: nwse-resize; }
+
+  /* Canvas du masque : positionné en absolute dans zoom-inner, par-dessus le
+     master à la position du rect. Sous le SVG des poignées. */
+  #character-mask-canvas {
+    position: absolute;
+    pointer-events: none;       /* activé seulement en mode paint/erase via JS */
+    cursor: crosshair;
+    display: none;
+    mix-blend-mode: screen;
+    z-index: 4;
+  }
+  body.state-character #character-mask-canvas.shown { display: block; }
+  body.state-character #character-layer { z-index: 3; pointer-events: none; }
+
+  /* Panneau flottant du prompt et bouton "Générer" */
+  #character-panel {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    width: min(640px, 92vw);
+    background: rgba(20, 20, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(80, 180, 255, 0.4);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: none; flex-direction: column; gap: 10px;
+    z-index: 12;
+    color: #ddd;
+  }
+  body.state-character #character-panel.shown { display: flex; }
+  #character-panel textarea {
+    min-height: 60px;
+  }
+  #character-panel .field-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
+  #character-panel .row { display: flex; gap: 8px; }
+  #character-panel .row .btn { flex: 1; margin-top: 0; }
+</style>
+</head>
+<body class="state-home no-glow">
+
+<div class="stage" id="stage">
+  <div class="zoom-inner" id="zoom-inner">
+    <img id="master" src="master.jpg" alt="">
+    <svg id="contour-layer"   viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="hit-layer"       viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="editor-layer"    viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+    <!-- Mode personnage : le canvas (peinture) est SOUS le SVG (poignées),
+         pour que les poignées + le rect interceptent les clics quand le mode
+         le demande, et que le canvas reçoive les clics seulement où il faut. -->
+    <canvas id="character-mask-canvas"></canvas>
+    <svg id="character-layer" viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+</div>
+
+<div id="showcase"></div>
+
+<!-- ============ Volet rétractable du haut ============ -->
+<div id="top-rail">
+  <div id="top-rail-panel">
+    <div class="tool-row" id="tool-row-main">
+      <button class="tool-btn" data-tool="trace" title="Style du tracé">
+        <!-- picto: courbe -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c4-9 9-9 18 0"/></svg>
+        <span>Tracé</span>
+      </button>
+      <button class="tool-btn" data-tool="source" title="Image source / master">
+        <!-- picto: image -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 9"/></svg>
+        <span>Source</span>
+      </button>
+      <button class="tool-btn" data-tool="frames" title="Cadres">
+        <!-- picto: rectangles -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="8" width="8" height="12" rx="1"/></svg>
+        <span>Cadres</span>
+      </button>
+      <button class="tool-btn" data-tool="quests" title="Quêtes">
+        <!-- picto: cible -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+        <span>Quêtes</span>
+      </button>
+      <button class="tool-btn" data-tool="characters" title="Personnages (édition par masque)">
+        <!-- picto: humain -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="3.5"/><path d="M5 21c0-4 3.5-7 7-7s7 3 7 7"/></svg>
+        <span>Personnages</span>
+      </button>
+      <button class="tool-btn" data-tool="module" title="Module / sauver / bibliothèque">
+        <!-- picto: bibliothèque -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16M9 4v16M14 6l5 14M19 4h-3"/></svg>
+        <span>Module</span>
+      </button>
+    </div>
+
+    <!-- Sous-panneau : Tracé -->
+    <div class="tool-pane" data-pane="trace">
+      <h4>Style du tracé</h4>
+      <div class="field">
+        <div class="field-row"><span class="field-label">Épaisseur</span><span class="field-value" id="stroke-val">3.0</span></div>
+        <input type="range" id="stroke" min="1" max="6" step="0.1" value="3">
+      </div>
+      <div class="field">
+        <div class="field-row"><span class="field-label">Opacité</span><span class="field-value" id="opacity-val">0.92</span></div>
+        <input type="range" id="opacity" min="0.3" max="1" step="0.02" value="0.92">
+      </div>
+      <div class="field">
+        <div class="field-row"><span class="field-label">Lumière (glow)</span><span class="field-value" id="glow-val">0.00</span></div>
+        <input type="range" id="glow" min="0" max="1" step="0.05" value="0">
+      </div>
+    </div>
+
+    <!-- Sous-panneau : Source -->
+    <div class="tool-pane" data-pane="source">
+      <h4>Image source (master 2560×1440)</h4>
+      <textarea id="prompt" placeholder="Prompt de la scène…"></textarea>
+      <div class="btn-row">
+        <button class="btn" id="gen-master">Générer master</button>
+        <button class="btn" id="upload-master">Charger image</button>
+      </div>
+      <input type="file" id="upload-input" accept="image/*">
+    </div>
+
+    <!-- Cadres / Quêtes / Personnages : pas de panneau — le clic sur leur
+         bouton entre directement dans le mode interactif (cf. selectTool). -->
+
+    <!-- Boutons fantômes pour préserver les listeners app.js historiques -->
+    <button id="enter-editor" style="display:none;" aria-hidden="true"></button>
+    <button id="run-pipeline" style="display:none;" aria-hidden="true"></button>
+    <button id="open-quests-manager" style="display:none;" aria-hidden="true"></button>
+    <button id="enter-character-editor" style="display:none;" aria-hidden="true"></button>
+
+    <!-- Sous-panneau : Module -->
+    <div class="tool-pane" data-pane="module">
+      <h4>Module sauvegardé</h4>
+      <div id="current-scene-banner" style="display:none;margin-bottom:10px;padding:8px 10px;background:rgba(212,184,122,0.12);border:1px solid rgba(212,184,122,0.4);border-radius:6px;font-size:11px;color:rgba(212,184,122,0.95);">
+        Édition de : <strong id="current-scene-name"></strong>
+      </div>
+      <button class="btn" id="save-scene">Sauver comme module</button>
+      <a class="btn" href="library.html" style="text-decoration:none;display:block;text-align:center;margin-top:6px;">📚 Bibliothèque</a>
+    </div>
+  </div>
+
+  <button id="top-rail-handle" aria-label="Ouvrir / fermer le menu">
+    <span>Outils</span>
+    <span class="chev">▾</span>
+  </button>
+</div>
+
+<!-- legacy: pour préserver les listeners app.js qui référencent #settings-btn / #settings-panel -->
+<button id="settings-btn" style="display:none;" aria-hidden="true"></button>
+<div id="settings-panel" style="display:none;" aria-hidden="true"></div>
+
+<div id="editor-toolbar">
+  <span class="hint" style="font-size:11px;color:rgba(255,255,255,0.55);padding:0 8px;">
+    Trace un cadre sur l'image (drag), redimensionne avec les poignées
+  </span>
+  <span class="sep"></span>
+  <button id="add-observation-question">+ Question d'observation</button>
+  <button id="manage-questions">Questions niv. 1</button>
+  <span class="sep"></span>
+  <button id="exit-editor">Quitter</button>
+  <button class="primary" id="generate-from-editor">Sauver et générer</button>
+</div>
+
+<div id="box-panel">
+  <div class="box-panel-header">
+    <span class="box-panel-title">Cadre sélectionné</span>
+    <button class="box-panel-close" id="close-box-panel" aria-label="Fermer">×</button>
+  </div>
+
+  <!-- Section : Description du sujet (ouverte par défaut) -->
+  <details class="bp-section" data-bp="subject" open>
+    <summary>Description du sujet</summary>
+    <div class="bp-content">
+      <textarea id="box-subject" placeholder="ex: la femme en robe rouge"></textarea>
+      <div class="bp-help">Sert à isoler le sujet sur l'image 1 (perso + fond bokeh).</div>
+    </div>
+  </details>
+
+  <!-- Section : Prompt image 2 -->
+  <details class="bp-section" data-bp="image2">
+    <summary>Prompt image 2 <span class="bp-summary-hint">(zoom face caméra)</span></summary>
+    <div class="bp-content">
+      <textarea id="box-prompt-c" placeholder="Optionnel. Décris la pose / l'expression / le regard. Vide = face caméra, sourire chaleureux." style="min-height:60px;"></textarea>
+      <div class="bp-help">Cette image se génère en // du tracé quand tu cliques sur Régénérer.</div>
+    </div>
+  </details>
+
+  <!-- Section : Format / aspect ratio -->
+  <details class="bp-section" data-bp="format">
+    <summary>Format <span class="bp-summary-hint" id="box-aspect-display">2:3</span></summary>
+    <div class="bp-content">
+      <select id="box-aspect">
+        <optgroup label="Carré">
+          <option value="1:1">Carré 1:1</option>
+        </optgroup>
+        <optgroup label="Paysage">
+          <option value="5:4">Paysage 5:4 (doux)</option>
+          <option value="4:3">Paysage 4:3 (TV)</option>
+          <option value="3:2">Paysage 3:2 (classique)</option>
+          <option value="16:9">Paysage 16:9 (cinéma)</option>
+          <option value="21:9">Paysage 21:9 (ultra-large)</option>
+        </optgroup>
+        <optgroup label="Portrait">
+          <option value="4:5">Portrait 4:5 (doux)</option>
+          <option value="3:4">Portrait 3:4 (TV)</option>
+          <option value="2:3">Portrait 2:3 (classique)</option>
+          <option value="9:16">Portrait 9:16 (mobile)</option>
+          <option value="9:21">Portrait 9:21 (ultra-tall)</option>
+        </optgroup>
+        <optgroup label="Libre">
+          <option value="free">Libre (tout format)</option>
+        </optgroup>
+      </select>
+    </div>
+  </details>
+
+  <!-- Section : Quête associée -->
+  <details class="bp-section" data-bp="quest">
+    <summary>Quête associée <span class="bp-summary-hint" id="box-quest-summary">— Aucune —</span></summary>
+    <div class="bp-content">
+      <select id="box-quest-select">
+        <option value="">— Aucune —</option>
+      </select>
+      <div class="bp-help">Pour créer/éditer une quête, ouvre le module « Quêtes » dans le menu du haut.</div>
+    </div>
+  </details>
+
+  <!-- Section : Régénérer (la plus utilisée → toujours visible mais compacte) -->
+  <div class="bp-section bp-section-static">
+    <div class="bp-static-title">Régénérer pour ce cadre</div>
+    <div id="regen-options">
+      <label class="regen-check"><input type="checkbox" id="regen-imageB" checked> <span>Image zoom 1</span></label>
+      <label class="regen-check"><input type="checkbox" id="regen-imageC" checked> <span>Image zoom 2</span></label>
+      <label class="regen-check"><input type="checkbox" id="regen-dessin"> <span>Dessin</span></label>
+    </div>
+    <button class="btn" id="regen-box" style="background:rgba(80,180,255,0.15);border-color:rgba(80,180,255,0.5);color:rgba(140,200,255,0.95);margin-top:8px;">↻ Régénérer la sélection</button>
+  </div>
+
+  <!-- Action destructive : tout en bas, peu visible volontairement -->
+  <button class="btn box-panel-delete" id="delete-box">Supprimer ce cadre</button>
+</div>
+
+<!-- ----- Modal: edit observation question ----- -->
+<div id="question-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Question d'observation</h3>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Énoncé</span></div>
+      <textarea id="q-text" placeholder="ex: Combien de clients sont visibles dans la boutique ?"></textarea>
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Choix de réponse (clique sur la pastille pour marquer comme bonne)</span></div>
+      <div id="q-choices" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <button class="btn" id="q-add-choice" style="margin-top:8px;">+ Choix</button>
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Explication (affichée après la réponse)</span></div>
+      <textarea id="q-explanation" placeholder="ex: La scène montre 5 clients : un couple, une dame aux cheveux blancs..." style="min-height:60px;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="q-cancel">Annuler</button>
+      <button class="btn primary" id="q-save">Sauver</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Mode Personnages : toolbar + panneau prompt ============ -->
+<div id="character-toolbar">
+  <button id="char-mode-rect" class="active" title="Tracer / déplacer le cadre">⬚ Cadre</button>
+  <button id="char-mode-paint" title="Peindre la zone à modifier">🖌 Brosse</button>
+  <button id="char-mode-erase" title="Effacer le mask">⌫ Gomme</button>
+  <span class="sep"></span>
+  <span class="label-mini">Taille</span>
+  <input type="range" id="char-brush-size" min="6" max="120" step="2" value="40">
+  <span class="sep"></span>
+  <button id="char-clear-mask" title="Effacer tout le masque">Effacer mask</button>
+  <button id="char-clear-rect" title="Refaire le cadre">Refaire le cadre</button>
+  <span class="sep"></span>
+  <button id="exit-character">Quitter</button>
+</div>
+
+<div id="character-panel">
+  <div>
+    <div class="field-label">Prompt — décris ce que tu veux dans la zone peinte</div>
+    <textarea id="char-prompt" placeholder="ex: replace the bottle with a dark green wine bottle, gold label, soft warm lighting, photorealistic"></textarea>
+  </div>
+  <div style="font-size:11px;color:rgba(255,255,255,0.5);">
+    <span id="char-rect-info">Trace un cadre sur l'image, puis peins la zone à modifier.</span>
+  </div>
+  <div class="row">
+    <button class="btn" id="char-cancel">Annuler</button>
+    <button class="btn primary" id="char-generate" style="background:rgba(80,180,255,0.18);border-color:rgba(80,180,255,0.5);color:rgba(140,200,255,0.95);">Générer</button>
+  </div>
+</div>
+
+<!-- ----- Modal: list/manage all observation questions ----- -->
+<div id="questions-list-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Questions d'observation (niveau 1)</h3>
+    <div id="ql-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="ql-add">+ Ajouter une question</button>
+      <button class="btn primary" id="ql-close">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ----- Modal: list/manage all quests ----- -->
+<div id="quests-list-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Quêtes (niveau 2)</h3>
+    <div id="quests-list-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
+      <button class="btn primary" id="quests-list-close">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ----- Modal: edit quest ----- -->
+<div id="quest-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Quête (niveau 2)</h3>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Cadre associé</span></div>
+      <select id="qu-box" style="width:100%;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px;font-family:inherit;font-size:12px;">
+        <option value="">— Choisir un cadre —</option>
+      </select>
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Titre court</span></div>
+      <input type="text" id="qu-title" placeholder="ex: La grand-mère">
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Texte d'introduction (affiché sur l'image 1)</span></div>
+      <textarea id="qu-intro" placeholder="ex: Une cliente élégante observe attentivement un collier exposé en vitrine. Elle semble hésiter…"></textarea>
+    </div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.5);background:rgba(80,180,255,0.06);border-left:3px solid rgba(80,180,255,0.4);padding:10px 12px;border-radius:4px;line-height:1.5;margin-bottom:6px;">
+      <strong style="color:rgba(140,200,255,0.95);">Images de la quête</strong> · L'image 1 (perso + bokeh)
+      et l'image 2 (face caméra) viennent automatiquement du cadre associé.
+      Pour ajuster l'image 2, modifie le prompt dans le panneau du cadre,
+      puis régénère le cadre.
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Choix de dialogue (clique sur l'étoile pour marquer le meilleur)</span></div>
+      <div id="qu-choices" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <button class="btn" id="qu-add-choice" style="margin-top:8px;">+ Choix</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="qu-cancel">Annuler</button>
+      <button class="btn primary" id="qu-save">Sauver</button>
+    </div>
+  </div>
+</div>
+
+<div id="gen-overlay">
+  <div class="gen-spinner"></div>
+  <div class="gen-step" id="gen-step">Préparation…</div>
+  <div class="gen-progress" id="gen-progress">0 / 0</div>
+  <div class="gen-error" id="gen-error"></div>
+</div>
+
+<div id="m-slider" aria-label="Navigation horizontale">
+  <div id="m-slider-track"></div>
+  <div id="m-slider-thumb"></div>
+</div>
+
+<div id="status">chargement…</div>
+
+<script src="app.js"></script>
+</body>
+</html>

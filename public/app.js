@@ -1223,6 +1223,11 @@ function openQuestionModal(idx = -1) {
 function closeQuestionModal() {
   $('question-modal').classList.remove('shown');
   editingQuestionIndex = -1;
+  // Si on annule et qu'on venait de Missions, on y retourne (onglet N1).
+  if (_returnToMissionsAfterSave) {
+    _returnToMissionsAfterSave = false;
+    openMissionsModal('n1');
+  }
 }
 
 function addChoiceRow(container, value = '', marked = false, isQuest = false) {
@@ -1290,9 +1295,14 @@ $('q-save').addEventListener('click', async () => {
   if (editingQuestionIndex >= 0) list[editingQuestionIndex] = q;
   else list.push(q);
   await saveSceneMeta({ level1_questions: list });
+  // closeQuestionModal s'occupe de rouvrir la modale Missions si le flag
+  // _returnToMissionsAfterSave est posé (cf. patch sur closeQuestionModal).
   closeQuestionModal();
-  if ($('questions-list-modal').classList.contains('shown')) renderQuestionsList();
 });
+
+// Flag posé quand on entre dans un modal d'édition depuis la modale Missions,
+// pour pouvoir y revenir après save/cancel (au lieu de fermer net).
+let _returnToMissionsAfterSave = false;
 
 function renderQuestionsList() {
   const box = $('ql-items');
@@ -1312,7 +1322,9 @@ function renderQuestionsList() {
         <button class="del">Suppr</button>
       </div>`;
     item.querySelector('.edit').addEventListener('click', () => {
-      $('questions-list-modal').classList.remove('shown');
+      _returnToMissionsAfterSave = true;
+      _missionsLastTab = 'n1';
+      closeMissionsModal();
       openQuestionModal(i);
     });
     item.querySelector('.del').addEventListener('click', async () => {
@@ -1333,14 +1345,17 @@ $('add-observation-question').addEventListener('click', async () => {
 $('manage-questions').addEventListener('click', async () => {
   if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
   await loadCurrentSceneMeta();
-  renderQuestionsList();
-  $('questions-list-modal').classList.add('shown');
+  openMissionsModal('n1');
 });
 $('ql-add').addEventListener('click', () => {
-  $('questions-list-modal').classList.remove('shown');
+  _missionsLastTab = 'n1';
+  _returnToMissionsAfterSave = true;
+  closeMissionsModal();
   openQuestionModal(-1);
 });
-$('ql-close').addEventListener('click', () => $('questions-list-modal').classList.remove('shown'));
+// Legacy ghost button — referrer compat (le bouton est caché, mais on garde
+// le listener au cas où). Ferme simplement la modale.
+$('ql-close').addEventListener('click', () => closeMissionsModal());
 
 // =================== QUESTS (level 2) ==================================
 let editingQuestIndex = -1;
@@ -1380,6 +1395,11 @@ function closeQuestModal() {
   $('quest-modal').classList.remove('shown');
   editingQuestIndex = -1;
   editingQuestBoxId = null;
+  // Si on annule et qu'on venait de Missions, on y retourne (onglet N2).
+  if (_returnToMissionsAfterSave) {
+    _returnToMissionsAfterSave = false;
+    openMissionsModal('n2');
+  }
 }
 
 $('qu-add-choice').addEventListener('click', () => addChoiceRow($('qu-choices'), '', false, true));
@@ -1411,6 +1431,7 @@ async function saveQuest() {
   if (editingQuestIndex >= 0) list[editingQuestIndex] = quest;
   else list.push(quest);
   await saveSceneMeta({ quests: list });
+  // closeQuestModal s'occupe de rouvrir Missions si le flag est posé.
   closeQuestModal();
 }
 
@@ -1465,11 +1486,38 @@ selectBox = function (id) {
   refreshBoxQuestSelect();
 };
 
-// Modale-liste de toutes les quêtes (vue dédiée du module "Quêtes")
-function openQuestsListModal() {
-  $('quests-list-modal').classList.add('shown');
+// Modale Missions unifiée : 2 sous-onglets (N1 Observations / N2 Quêtes).
+// L'onglet actif est conservé pour pouvoir rouvrir la modale au même endroit
+// après un add/edit (les modales d'édition unitaires se posent par-dessus).
+let _missionsLastTab = 'n1';
+function openMissionsModal(tab = 'n1') {
+  _missionsLastTab = tab;
+  // Active le bon sous-onglet
+  document.querySelectorAll('.missions-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mtab === tab);
+  });
+  document.querySelectorAll('.missions-pane').forEach(p => {
+    p.style.display = p.dataset.mpane === tab ? '' : 'none';
+  });
+  // Rend les deux listes (peu cher, et garantit que les 2 sont à jour)
+  renderQuestionsList();
   renderQuestsList();
+  $('missions-modal').classList.add('shown');
 }
+function closeMissionsModal() {
+  $('missions-modal').classList.remove('shown');
+}
+// Click sur un sous-onglet : change le panneau visible (sans fermer la modale)
+document.querySelectorAll('.missions-tab').forEach(btn => {
+  btn.addEventListener('click', () => openMissionsModal(btn.dataset.mtab));
+});
+$('missions-close').addEventListener('click', () => {
+  closeMissionsModal();
+  refreshQuestsOverview();
+});
+
+// Backwards-compat : l'ancienne fonction est conservée comme alias.
+function openQuestsListModal() { openMissionsModal('n2'); }
 function renderQuestsList() {
   const box = $('quests-list-items');
   box.innerHTML = '';
@@ -1494,7 +1542,9 @@ function renderQuestsList() {
         <button class="del">Suppr</button>
       </div>`;
     item.querySelector('.edit').addEventListener('click', async () => {
-      $('quests-list-modal').classList.remove('shown');
+      _returnToMissionsAfterSave = true;
+      _missionsLastTab = 'n2';
+      closeMissionsModal();
       await loadCurrentSceneMeta();
       openQuestModal(q.box_id, i);
     });
@@ -1504,7 +1554,7 @@ function renderQuestsList() {
       const linkedBox = state.boxes.find(b => String(b.id) === String(q.box_id));
       if (!linkedBox) { alert('Le cadre lié à cette quête n\'existe plus.'); return; }
       if (!confirm(`Relancer la génération des images zoom du cadre ${q.box_id} (image B + image C) ?`)) return;
-      $('quests-list-modal').classList.remove('shown');
+      $('missions-modal').classList.remove('shown');
       showOverlay({ step: 'Régénération des 2 images du cadre…', step_index: 1, total_steps: 2 });
       const r = await fetch('/api/regen-box', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1532,12 +1582,14 @@ function renderQuestsList() {
   });
 }
 $('quests-list-add').addEventListener('click', () => {
-  $('quests-list-modal').classList.remove('shown');
-  // Ouvre la modale d'édition vierge (le user choisit le cadre dans le select).
+  _missionsLastTab = 'n2';
+  _returnToMissionsAfterSave = true;
+  closeMissionsModal();
   openQuestModal(state.selectedBoxId || '', -1);
 });
+// Legacy ghost button — référer compat.
 $('quests-list-close').addEventListener('click', () => {
-  $('quests-list-modal').classList.remove('shown');
+  closeMissionsModal();
   refreshQuestsOverview();
 });
 
@@ -1551,7 +1603,7 @@ $('quests-list-close').addEventListener('click', () => {
 //     modale de gestion, et FERMENT le rail.
 const TOOL_PANELS  = new Set(['trace', 'source', 'module']);
 const TOOL_MODES   = new Set(['frames', 'characters']);
-const TOOL_MODALS  = new Set(['quests']);
+const TOOL_MODALS  = new Set(['missions']);
 
 function showToolPane(name) {
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
@@ -1575,13 +1627,13 @@ async function selectTool(name) {
   }
   if (TOOL_MODALS.has(name)) {
     closeTopRail();
-    if (name === 'quests') {
+    if (name === 'missions') {
       if (!sceneState.id) {
-        alert('Sauve d\'abord la scène comme module pour pouvoir gérer ses quêtes.');
+        alert('Sauve d\'abord la scène comme module pour pouvoir gérer ses missions.');
         return;
       }
       await loadCurrentSceneMeta();
-      openQuestsListModal();
+      openMissionsModal('n1');
     }
     return;
   }

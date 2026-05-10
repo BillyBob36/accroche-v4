@@ -633,6 +633,35 @@
   }
   .modal-actions .btn { flex: 1; margin-top: 0; }
 
+  /* Sous-onglets du modal Missions */
+  .missions-tabs {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid rgba(212,184,122,0.18);
+    margin-bottom: 14px;
+  }
+  .missions-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: rgba(255,255,255,0.55);
+    padding: 9px 10px;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 200ms, border-color 200ms, background 200ms;
+  }
+  .missions-tab:hover {
+    color: rgba(255,255,255,0.85);
+    background: rgba(212,184,122,0.06);
+  }
+  .missions-tab.active {
+    color: rgba(212,184,122,0.95);
+    border-bottom-color: rgba(212,184,122,0.95);
+  }
+
   .choice-row {
     display: flex; align-items: flex-start; gap: 8px;
     background: rgba(0,0,0,0.3);
@@ -1054,10 +1083,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="8" width="8" height="12" rx="1"/></svg>
         <span>Cadres</span>
       </button>
-      <button class="tool-btn" data-tool="quests" title="Quêtes">
+      <button class="tool-btn" data-tool="missions" title="Missions">
         <!-- picto: cible -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
-        <span>Quêtes</span>
+        <span>Missions</span>
       </button>
       <button class="tool-btn" data-tool="characters" title="Personnages (édition par masque)">
         <!-- picto: humain -->
@@ -1273,29 +1302,38 @@
   </div>
 </div>
 
-<!-- ----- Modal: list/manage all observation questions ----- -->
-<div id="questions-list-modal" class="modal-overlay">
+<!-- ----- Modal Missions : sous-onglets N1 (observations) et N2 (quêtes) ----- -->
+<div id="missions-modal" class="modal-overlay">
   <div class="modal">
-    <h3>Questions d'observation (niveau 1)</h3>
-    <div id="ql-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
-    <div class="modal-actions">
-      <button class="btn" id="ql-add">+ Ajouter une question</button>
-      <button class="btn primary" id="ql-close">Fermer</button>
+    <h3>Missions du module</h3>
+    <!-- Sous-onglets : N1 — Observations / N2 — Quêtes -->
+    <div class="missions-tabs" id="missions-tabs">
+      <button class="missions-tab active" data-mtab="n1">Niveau 1 — Observations</button>
+      <button class="missions-tab" data-mtab="n2">Niveau 2 — Quêtes</button>
+    </div>
+    <!-- Panneau N1 : questions d'observation -->
+    <div class="missions-pane" data-mpane="n1">
+      <div id="ql-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn" id="ql-add">+ Ajouter une question</button>
+      </div>
+    </div>
+    <!-- Panneau N2 : quêtes -->
+    <div class="missions-pane" data-mpane="n2" style="display:none;">
+      <div id="quests-list-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
+      </div>
+    </div>
+    <!-- Bouton Fermer commun aux 2 sous-onglets -->
+    <div class="modal-actions" style="margin-top:12px;">
+      <button class="btn primary" id="missions-close" style="flex:1;">Fermer</button>
     </div>
   </div>
 </div>
-
-<!-- ----- Modal: list/manage all quests ----- -->
-<div id="quests-list-modal" class="modal-overlay">
-  <div class="modal">
-    <h3>Quêtes (niveau 2)</h3>
-    <div id="quests-list-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
-    <div class="modal-actions">
-      <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
-      <button class="btn primary" id="quests-list-close">Fermer</button>
-    </div>
-  </div>
-</div>
+<!-- Boutons ghosts pour préserver les listeners legacy (ql-close / quests-list-close) -->
+<button id="ql-close" style="display:none;" aria-hidden="true"></button>
+<button id="quests-list-close" style="display:none;" aria-hidden="true"></button>
 
 <!-- ----- Modal: edit quest ----- -->
 <div id="quest-modal" class="modal-overlay">

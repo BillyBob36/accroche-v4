@@ -378,6 +378,9 @@
     background: rgba(255,140,140,.10);
     border-color: rgba(255,140,140,.5);
     color: rgba(255,180,180,.95);
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
+    text-decoration-color: rgba(255,140,140,.7);
   }
   .qcm-choice.was-correct {
     border-color: var(--good);
@@ -385,6 +388,10 @@
     color: var(--good);
   }
   .qcm-choice:disabled { cursor: default; }
+  /* Après pick : cache les choix non-impliqués (ni picked, ni correct).
+     Le DOM les conserve mais ils ne prennent plus de place, libérant
+     de la hauteur pour l'explication. */
+  .qcm-choice.hidden-after-pick { display: none; }
   /* Encart or italique pour l'explication — même esprit qu'une note de programme */
   .qcm-explain {
     margin-top: 16px; padding: 14px 16px;
@@ -514,21 +521,36 @@
     z-index: 50;
     display: none;
     flex-direction: column;
-    padding: 16px 16px 22px;
+    padding: 0 16px 22px;
     pointer-events: none;
   }
   .dialogue.shown { display: flex; animation: dialogue-fade 250ms ease; }
   @keyframes dialogue-fade { from { opacity: 0; } to { opacity: 1; } }
-  /* Header card : posée en haut, fond noir semi-transparent + filet or */
+  /* Header card : collée au topbar, fond noir semi-transparent + filet or.
+     border-radius en bas seulement (pas en haut pour s'attacher visuellement
+     au topbar). On retire padding-top du parent pour que la card touche
+     directement la barre du haut. */
   .dialogue-header {
     pointer-events: auto;
     background: rgba(8,5,6,0.86);
     backdrop-filter: blur(8px);
     border: 1px solid var(--accent-line);
-    border-radius: 8px;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    margin: 0 -8px;
     padding: 14px 18px;
     text-align: center;
     box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  }
+  /* Quand le dialogue est ouvert, on pousse l'image C vers le bas pour
+     qu'elle ne soit pas masquée par la header card. Sans ça, l'image
+     reste centrée verticalement et chevauche la card. */
+  body.in-dialogue .quest-overlay .quest-img-wrap {
+    padding-top: 84px;
+    align-items: flex-start;
+  }
+  body.in-dialogue .quest-overlay .quest-img-wrap img {
+    margin-top: 0;
   }
   .dialogue-header .eyebrow {
     font-size: 10px; letter-spacing: 3px;
@@ -559,6 +581,44 @@
     transition: transform 320ms cubic-bezier(.2,.7,.2,1);
     will-change: transform;
   }
+  /* "Swipe tease" : au montage du dialogue, le track fait un léger
+     aller-retour vers la gauche pour révéler qu'il y a du contenu à
+     swiper. Combiné à un dot indicator qui pulse pour renforcer
+     l'indication. L'animation tourne 2 fois avec 600 ms de delay puis
+     se désactive automatiquement (forwards rétablit translateX(0)).
+     L'utilisateur peut interrompre en swipant lui-même. */
+  @keyframes carousel-tease {
+    0%   { transform: translateX(0%); }
+    25%  { transform: translateX(-8%); }
+    50%  { transform: translateX(0%); }
+    75%  { transform: translateX(-8%); }
+    100% { transform: translateX(0%); }
+  }
+  .dialogue-carousel-track.tease {
+    animation: carousel-tease 1800ms cubic-bezier(.4,0,.4,1) 600ms 1 both;
+  }
+  /* Une icône "main qui swipe" qui se superpose au-dessus du carousel le
+     temps de la tease. Pure SVG inline, fade-out après l'anim. */
+  .dialogue-swipe-hint {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 56px; height: 56px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 1;
+  }
+  .dialogue-swipe-hint.tease {
+    animation: swipe-hint-pulse 1800ms ease-in-out 600ms 1 both;
+  }
+  @keyframes swipe-hint-pulse {
+    0%   { opacity: 0; transform: translate(-50%, -50%) translateX(0); }
+    20%  { opacity: 0.9; }
+    50%  { opacity: 0.7; transform: translate(-50%, -50%) translateX(20px); }
+    80%  { opacity: 0.4; transform: translate(-50%, -50%) translateX(0); }
+    100% { opacity: 0; }
+  }
+  .dialogue-carousel-wrap { position: relative; }
   .dialogue-carousel-page {
     flex: 0 0 100%;
     min-width: 100%;
@@ -666,7 +726,7 @@
   }
   .dialogue-feedback .explain {
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 15px; line-height: 1.6;
+    font-size: 20px; line-height: 1.55;
     color: var(--fg);
   }
   /* Bouton Continuer après feedback : style primaire VButton (gold gradient,
@@ -791,6 +851,14 @@
   <div class="dialogue-body">
     <div class="dialogue-carousel-wrap" id="dialogue-carousel-wrap">
       <div class="dialogue-carousel-track" id="dialogue-carousel-track"></div>
+      <!-- Main qui glisse — overlay tease au montage seulement -->
+      <svg class="dialogue-swipe-hint" id="dialogue-swipe-hint"
+           viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="30" fill="rgba(8,5,6,0.85)" stroke="rgba(229,196,141,0.4)" stroke-width="1"/>
+        <path d="M22 36 L40 36 M34 30 L40 36 L34 42" stroke="rgba(229,196,141,0.95)"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M14 32 L20 32" stroke="rgba(229,196,141,0.65)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </div>
     <div class="dialogue-dots" id="dialogue-dots"></div>
     <div class="dialogue-hint-row" id="dialogue-hint-row">

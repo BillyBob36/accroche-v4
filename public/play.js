@@ -196,7 +196,7 @@ function startLevel1() {
     <div class="eyebrow">✦ Acte I ✦</div>
     <h2>Observation</h2>
     <hr class="rule">
-    <p>Vous arrivez sur le pas de la porte d'une boutique. Survolez les personnages pour les identifier, cliquez pour zoomer.</p>
+    <p>Survolez les personnages pour les identifier, cliquez pour zoomer.</p>
     <p>Mémorisez : qui est présent, comment ils sont placés, ce qu'ils font. Vous serez interrogé ensuite.</p>
     <button class="btn" id="go-observe">Commencer l'observation</button>
   `);
@@ -213,23 +213,11 @@ function runObservationPhase() {
   // Charge les contours skel + zones cliquables (comme dans l'éditeur).
   renderObservationLayer();
 
-  // Compteur 20s indicatif + bouton "Continuer aux questions" pour skipper.
+  // Compteur 20s indicatif — bascule auto vers le QCM à 0s (plus de CTA
+  // pour skipper, l'observation est forcée pour ses 20 secondes).
   let secs = LEVEL1_TIMER_SECONDS;
   const counter = $('quest-counter');
   counter.classList.add('shown');
-
-  // Bouton "Continuer" en bas-centre — toujours dispo (pas obligé d'attendre)
-  let cta = document.getElementById('observation-cta');
-  if (!cta) {
-    cta = document.createElement('button');
-    cta.id = 'observation-cta';
-    cta.className = 'talk-btn';  // réutilise le style "Parler" : pill doré
-    cta.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:24;';
-    cta.textContent = 'Continuer aux questions →';
-    cta.addEventListener('click', endObservation);
-    document.body.appendChild(cta);
-  }
-  cta.style.display = 'inline-block';
 
   function tick() {
     if (secs > 0) {
@@ -250,8 +238,10 @@ function runObservationPhase() {
 function endObservation() {
   if (_observationTickHandle) { clearInterval(_observationTickHandle); _observationTickHandle = null; }
   $('quest-counter').classList.remove('shown');
+  // Au cas où une ancienne version aurait laissé traîner le CTA dans le DOM,
+  // on le retire défensivement.
   const cta = document.getElementById('observation-cta');
-  if (cta) cta.style.display = 'none';
+  if (cta) cta.remove();
   // Si un overlay (image B / zoom) est ouvert, on le ferme avant de basculer
   // aux questions. resetZoomToHome remet le master à sa position d'origine.
   const overlay = $('quest-overlay');
@@ -429,11 +419,18 @@ function showQuestion() {
     btn.addEventListener('click', () => {
       const picked = parseInt(btn.dataset.orig, 10);
       const good = picked === correctOriginalIdx;
-      // Lock all
+      // Verrouille TOUS les boutons + cache ceux qui ne sont ni le choix
+      // de l'utilisateur ni la bonne réponse. Cela libère de la hauteur
+      // pour l'explication. La mauvaise réponse pickée garde sa croix.
       document.querySelectorAll('.qcm-choice').forEach(b => {
         b.disabled = true;
         const oi = parseInt(b.dataset.orig, 10);
-        if (oi === correctOriginalIdx) b.classList.add('was-correct');
+        const isPicked = oi === picked;
+        const isCorrect = oi === correctOriginalIdx;
+        if (isCorrect) b.classList.add('was-correct');
+        if (!isPicked && !isCorrect) {
+          b.classList.add('hidden-after-pick');
+        }
       });
       btn.classList.add('picked', good ? 'good' : 'bad');
       if (good) game.score++;
@@ -699,7 +696,12 @@ function openDialogue() {
   // 4. Swipe horizontal (touchstart / touchend) sur le wrap du carousel.
   const wrap = $('dialogue-carousel-wrap');
   let touchStartX = null;
-  const onTouchStart = (e) => { touchStartX = e.touches[0].clientX; };
+  const onTouchStart = (e) => {
+    touchStartX = e.touches[0].clientX;
+    // Premier touch : coupe la tease anim pour ne pas combattre le swipe.
+    $('dialogue-carousel-track').classList.remove('tease');
+    $('dialogue-swipe-hint').classList.remove('tease');
+  };
   const onTouchEnd = (e) => {
     if (touchStartX == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
@@ -737,10 +739,31 @@ function openDialogue() {
   $('dialogue-hint-row').classList.remove('hidden');
   document.querySelector('.dialogue-body').classList.remove('feedback-mode');
   $('dialogue').classList.add('shown');
+
+  // Pousse l'image C vers le bas pour qu'elle ne soit pas couverte par
+  // la header card collée en haut.
+  document.body.classList.add('in-dialogue');
+
+  // Swipe tease : la 1re fois qu'on ouvre un dialogue dans cette session,
+  // on joue une mini animation pour révéler le carousel swipeable. Si
+  // l'utilisateur a déjà interagi (touch ou clic sur dot), on saute.
+  const track2 = $('dialogue-carousel-track');
+  const hint = $('dialogue-swipe-hint');
+  // Reset des anim (au cas où on re-ouvre)
+  track2.classList.remove('tease');
+  hint.classList.remove('tease');
+  // Re-trigger en forçant un reflow puis ré-application
+  void track2.offsetWidth;
+  track2.classList.add('tease');
+  hint.classList.add('tease');
 }
 
 function setDialogueChoiceIdx(idx) {
   _dialogueChoiceIdx = idx;
+  // Première interaction utilisateur : on coupe net la tease anim pour
+  // ne pas combattre son swipe / clic de dot.
+  $('dialogue-carousel-track').classList.remove('tease');
+  $('dialogue-swipe-hint').classList.remove('tease');
   $('dialogue-carousel-track').style.transform = `translateX(-${idx * 100}%)`;
   document.querySelectorAll('.dialogue-carousel-page').forEach((p, i) =>
     p.classList.toggle('is-active', i === idx));
@@ -786,11 +809,14 @@ $('dialogue-close').addEventListener('click', () => {
   // mark quest as done
   if (game.currentQuestId) game.questsDone.add(game.currentQuestId);
   $('dialogue').classList.remove('shown');
+  document.body.classList.remove('in-dialogue');
   // Cleanup listeners + reset visibilité des modules pour le prochain dialogue
   if (typeof _dialogueTouchDetach === 'function') {
     _dialogueTouchDetach();
     _dialogueTouchDetach = null;
   }
+  $('dialogue-carousel-track').classList.remove('tease');
+  $('dialogue-swipe-hint').classList.remove('tease');
   $('dialogue-carousel-wrap').classList.remove('hidden');
   $('dialogue-dots').classList.remove('hidden');
   $('dialogue-hint-row').classList.remove('hidden');

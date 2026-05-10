@@ -141,6 +141,53 @@
     };
   }
 
+  /** Air-blade : bruit + bandpass ÉTROIT qui sweep → effet lame / flèche
+      / sifflement aérien. Plus le Q est haut, plus le son devient
+      "sifflet" et focalisé. Idéal pour les "coups qui fendent l'air". */
+  function airBlade({ dur = 0.4, fromHz = 600, toHz = 1800, q = 6, peak = 0.32 }) {
+    return (vol = 1) => {
+      const c = ctx(); if (!c) return;
+      const now = c.currentTime;
+      const src = c.createBufferSource();
+      src.buffer = noiseBuffer();
+      src.loop = true;
+      const flt = c.createBiquadFilter();
+      flt.type = 'bandpass';
+      flt.frequency.value = fromHz;
+      flt.frequency.exponentialRampToValueAtTime(Math.max(40, toHz), now + dur);
+      flt.Q.value = q;
+      const g = c.createGain();
+      src.connect(flt); flt.connect(g); g.connect(c.destination);
+      envelope(g, now, dur, 0.02, 0.05, 0.7, 0.12, vol * peak);
+      src.start(now);
+      src.stop(now + dur + 0.2);
+    };
+  }
+
+  /** Punch-miss : whoosh avec attaque MARQUÉE et decay rapide. Le filtre
+      lowpass descend (object qui s'éloigne ou poing qui rate). Simule
+      le bruit d'air déplacé violemment. */
+  function airPunchMiss({ dur = 0.35, fromHz = 1400, toHz = 200, peak = 0.42 }) {
+    return (vol = 1) => {
+      const c = ctx(); if (!c) return;
+      const now = c.currentTime;
+      const src = c.createBufferSource();
+      src.buffer = noiseBuffer();
+      src.loop = true;
+      const flt = c.createBiquadFilter();
+      flt.type = 'lowpass';
+      flt.frequency.value = fromHz;
+      flt.frequency.exponentialRampToValueAtTime(Math.max(40, toHz), now + dur);
+      flt.Q.value = 1.5;
+      const g = c.createGain();
+      src.connect(flt); flt.connect(g); g.connect(c.destination);
+      // Attack très rapide + decay long → caractère "coup raté"
+      envelope(g, now, dur * 0.35, 0.005, 0.04, 0.45, dur * 0.65, vol * peak);
+      src.start(now);
+      src.stop(now + dur + 0.2);
+    };
+  }
+
   /** Arpeggio : N notes successives (montée ou descente). */
   function arpeggio({ freqs = [523, 659, 784], step = 0.08, dur = 0.18, type = 'triangle' }) {
     return (vol = 1) => {
@@ -238,18 +285,22 @@
       { id: 'bad_silence',       label: '— Silence —', build: () => () => {} },
     ],
 
-    // ============== Zoom in (cinematic, vers un personnage) ==============
+    // ============== Zoom in : famille « coup de vent / coup raté » ==========
+    // Sons aériens qui évoquent un déplacement rapide d'air. Mix de :
+    //   - whooshes graves (vent/bourrasque, lowpass)
+    //   - lames bandpass (sifflement focalisé)
+    //   - coups ratés (attaque marquée + decay)
     zoom_in: [
-      { id: 'zoom_soie',         label: 'Soie qui glisse', build: () => softWhoosh({ dur: 1.1, fromHz: 150, toHz: 2200 }) },
-      { id: 'zoom_focus_lent',   label: 'Focus lent', build: () => softWhoosh({ dur: 1.4, fromHz: 100, toHz: 1400 }) },
-      { id: 'zoom_focus_rapide', label: 'Focus rapide', build: () => softWhoosh({ dur: 0.6, fromHz: 200, toHz: 1800 }) },
-      { id: 'zoom_velours_in',   label: 'Velours rentrant', build: () => softWhoosh({ dur: 1.0, fromHz: 280, toHz: 900 }) },
-      { id: 'zoom_chime_montee', label: 'Chime en montée', build: () => arpeggio({ freqs: [262, 392, 587], step: 0.18, dur: 0.30, type: 'sine' }) },
-      { id: 'zoom_rideau_in',    label: 'Rideau s\'ouvre', build: () => softWhoosh({ dur: 1.2, fromHz: 180, toHz: 1100 }) },
-      { id: 'zoom_souffle_haut', label: 'Souffle haut', build: () => softWhoosh({ dur: 0.9, fromHz: 600, toHz: 3000, hp: true }) },
-      { id: 'zoom_revele',       label: 'Révèle', build: () => arpeggio({ freqs: [392, 523, 698, 880], step: 0.12, dur: 0.22, type: 'sine' }) },
-      { id: 'zoom_velours_long', label: 'Velours long', build: () => softWhoosh({ dur: 1.5, fromHz: 220, toHz: 700 }) },
-      { id: 'zoom_silence',      label: '— Silence —', build: () => () => {} },
+      { id: 'zoom_coup_vent',   label: 'Coup de vent', build: () => softWhoosh({ dur: 0.85, fromHz: 200, toHz: 1400 }) },
+      { id: 'zoom_coup_rate',   label: 'Coup raté (rapide)', build: () => airPunchMiss({ dur: 0.30, fromHz: 1600, toHz: 200 }) },
+      { id: 'zoom_lame_air',    label: 'Lame qui fend l\'air', build: () => airBlade({ dur: 0.45, fromHz: 350, toHz: 1900, q: 6 }) },
+      { id: 'zoom_bourrasque',  label: 'Bourrasque', build: () => softWhoosh({ dur: 1.30, fromHz: 80, toHz: 900 }) },
+      { id: 'zoom_cape',        label: 'Cape qui claque', build: () => airPunchMiss({ dur: 0.55, fromHz: 1000, toHz: 300, peak: 0.38 }) },
+      { id: 'zoom_cyclone',     label: 'Souffle de cyclone', build: () => softWhoosh({ dur: 1.50, fromHz: 60, toHz: 600 }) },
+      { id: 'zoom_sabre',       label: 'Sabre court', build: () => airBlade({ dur: 0.20, fromHz: 600, toHz: 2800, q: 8 }) },
+      { id: 'zoom_fleche',      label: 'Flèche qui passe', build: () => airBlade({ dur: 0.42, fromHz: 2800, toHz: 700, q: 10 }) },
+      { id: 'zoom_passage_air', label: 'Passage d\'air', build: () => airPunchMiss({ dur: 0.45, fromHz: 1800, toHz: 400, peak: 0.36 }) },
+      { id: 'zoom_silence',     label: '— Silence —', build: () => () => {} },
     ],
 
     // ============== Score reveal (les % géants apparaissent) ==============
@@ -297,8 +348,8 @@
       desc: 'Quand on choisit une mauvaise réponse au QCM ou un choix moins bon.',
       defaultPreset: 'bad_velours_grave' },
     { key: 'zoom_in', label: 'Zoom caméra',
-      desc: 'Quand on clique sur un personnage et que la caméra zoome dessus.',
-      defaultPreset: 'zoom_soie' },
+      desc: 'Quand on clique sur un personnage et que la caméra zoome dessus. Famille « coup de vent / coup raté » : sons aériens, whooshes, sifflements de lame.',
+      defaultPreset: 'zoom_coup_vent' },
     { key: 'score_reveal', label: 'Score / Verdict',
       desc: 'Quand l\'écran de score apparaît (% géant, Bravo!).',
       defaultPreset: 'sc_fanfare' },

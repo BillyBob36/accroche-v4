@@ -96,32 +96,133 @@ function startLevel1() {
   // Brief screen
   setScreen(`
     <h2>Niveau 1 — Observation</h2>
-    <p style="margin-top:14px;">Vous arrivez sur le pas de la porte d'une boutique. Pendant <strong>${LEVEL1_TIMER_SECONDS} secondes</strong>, observez attentivement la scène.</p>
+    <p style="margin-top:14px;">Vous arrivez sur le pas de la porte d'une boutique. Survolez les personnages pour les identifier, cliquez pour zoomer.</p>
     <p>Mémorisez : qui est présent, comment ils sont placés, ce qu'ils font. Vous serez interrogé ensuite.</p>
     <button class="btn" id="go-observe">Commencer l'observation</button>
   `);
-  $('go-observe').addEventListener('click', runObservationTimer);
+  $('go-observe').addEventListener('click', runObservationPhase);
 }
 
-function runObservationTimer() {
+// ----- Phase observation interactive : navigation hover + clic comme l'éditeur -----
+let _observationTickHandle = null;
+
+function runObservationPhase() {
   blurStage(false);
   hideScreen();
-  // Render a small floating timer at the top-right
+
+  // Charge les contours skel + zones cliquables (comme dans l'éditeur).
+  renderObservationLayer();
+
+  // Compteur 20s indicatif + bouton "Continuer aux questions" pour skipper.
   let secs = LEVEL1_TIMER_SECONDS;
   const counter = $('quest-counter');
   counter.classList.add('shown');
-  counter.textContent = `Observation · ${secs}s`;
-  const tick = setInterval(() => {
-    secs--;
-    if (secs <= 0) {
-      clearInterval(tick);
-      counter.classList.remove('shown');
-      blurStage(true);
-      startQCM();
-      return;
-    }
-    counter.textContent = `Observation · ${secs}s`;
-  }, 1000);
+
+  // Bouton "Continuer" en bas-centre — toujours dispo (pas obligé d'attendre)
+  let cta = document.getElementById('observation-cta');
+  if (!cta) {
+    cta = document.createElement('button');
+    cta.id = 'observation-cta';
+    cta.className = 'talk-btn';  // réutilise le style "Parler" : pill doré
+    cta.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:24;';
+    cta.textContent = 'Continuer aux questions →';
+    cta.addEventListener('click', endObservation);
+    document.body.appendChild(cta);
+  }
+  cta.style.display = 'inline-block';
+
+  function tick() {
+    counter.textContent = secs > 0
+      ? `Observation · ${secs}s`
+      : `Observation libre`;
+    if (secs > 0) secs--;
+  }
+  tick();
+  _observationTickHandle = setInterval(tick, 1000);
+}
+
+function endObservation() {
+  if (_observationTickHandle) { clearInterval(_observationTickHandle); _observationTickHandle = null; }
+  $('quest-counter').classList.remove('shown');
+  const cta = document.getElementById('observation-cta');
+  if (cta) cta.style.display = 'none';
+  // Retire les contours et hit-zones du master.
+  $('quest-layer').innerHTML = '';
+  blurStage(true);
+  startQCM();
+}
+
+async function renderObservationLayer() {
+  const layer = $('quest-layer');
+  layer.innerHTML = '';
+  const boxes = game.scene.boxes || [];
+  const skelMap = new Map();
+
+  for (const box of boxes) {
+    // Skel SVG (contour blanc, comme dans l'éditeur, opaque seulement au hover)
+    try {
+      const t = await fetch(`scenes/${sceneId}/lineart-svg/box-${box.id}-skel.svg`).then(r => r.text());
+      const doc = new DOMParser().parseFromString(t, 'image/svg+xml');
+      const g = doc.querySelector('g');
+      if (g) {
+        const paths = g.querySelectorAll('path');
+        if (paths.length > 1) {
+          const merged = [...paths].map(p => p.getAttribute('d') || '').join(' ');
+          while (g.firstChild) g.removeChild(g.firstChild);
+          const onePath = document.createElementNS(SVG_NS, 'path');
+          onePath.setAttribute('d', merged);
+          g.appendChild(onePath);
+        }
+        const imp = g.cloneNode(true);
+        imp.setAttribute('class', 'observation-skel');
+        layer.appendChild(imp);
+        skelMap.set(String(box.id), imp);
+      }
+    } catch {}
+
+    // Zone cliquable (transparente)
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('class', 'observation-hit');
+    rect.setAttribute('x', box.x);
+    rect.setAttribute('y', box.y);
+    rect.setAttribute('width', box.w);
+    rect.setAttribute('height', box.h);
+    const skel = skelMap.get(String(box.id));
+    rect.addEventListener('mouseenter', () => skel?.classList.add('active'));
+    rect.addEventListener('mouseleave', () => skel?.classList.remove('active'));
+    rect.addEventListener('click', () => openObservationZoom(box));
+    layer.appendChild(rect);
+  }
+}
+
+// Ouvre l'image B en plein écran SANS possibilité d'aller à l'image C.
+// Un clic sur l'overlay ferme et ramène au master (pas de cycle B → C).
+function openObservationZoom(box) {
+  const overlay = $('quest-overlay');
+  const img = $('quest-img');
+  $('quest-caption').style.display = 'none';
+  $('quest-actions').innerHTML = '';   // pas de bouton "Parler"
+  img.classList.add('fade-out');
+  setTimeout(() => {
+    // Source principale = imageB du cadre, fallback sur ancien chemin pour rétrocompat
+    const primary = `scenes/${sceneId}/exp3/imageB/box-${box.id}.jpg`;
+    img.src = primary;
+    img.onload = () => img.classList.remove('fade-out');
+    img.onerror = () => img.classList.remove('fade-out');
+  }, 180);
+  overlay.classList.add('shown');
+  // Un clic n'importe où sur l'overlay le ferme (et pas de bascule B↔C).
+  overlay.onclick = (e) => {
+    // Ignore les clics sur l'image elle-même pour éviter les fermetures accidentelles
+    // au moment du chargement ; sinon ferme.
+    overlay.onclick = null;
+    overlay.classList.remove('shown');
+  };
+  // L'image est aussi cliquable
+  img.onclick = () => {
+    overlay.onclick = null;
+    overlay.classList.remove('shown');
+  };
 }
 
 function startQCM() {

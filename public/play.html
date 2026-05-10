@@ -108,6 +108,31 @@
   .quest-hit.done { cursor: not-allowed; }
   .quest-skel.done path { animation: none; stroke: rgba(80,227,164,0.7); filter: drop-shadow(0 0 6px rgba(80,227,164,0.5)); }
 
+  /* Phase observation (niveau 1) : contour discret, blanc, qui s'allume au hover.
+     Pas de shimmer doré — celui-ci est réservé aux quêtes du niveau 2. */
+  .observation-skel {
+    pointer-events: none;
+  }
+  .observation-skel path {
+    fill: none;
+    stroke: white;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    opacity: 0;
+    transition: opacity 240ms ease;
+  }
+  .observation-skel.active path {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.5));
+  }
+  .observation-hit {
+    fill: rgba(0,0,0,0);
+    cursor: pointer;
+    pointer-events: fill;
+  }
+
   /* ---- Brief / score / generic overlay screens ---- */
   .screen {
     position: fixed; inset: 52px 0 0 0;

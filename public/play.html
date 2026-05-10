@@ -4,19 +4,50 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Jeu de formation · Accroche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* ============ Direction "Velours Théâtre" ============
+     Bordeaux profond + accent champagne + Cormorant Garamond italique pour
+     les titres + Inter pour le texte courant. Conservé : toute la logique
+     JS (zoom split pan/scale, fade overlay, shimmer 2.4s, etc.) — seuls
+     les tokens visuels et les composants CSS changent. */
   :root {
-    --bg: #0a0a0a;
-    --fg: #e5e5e5;
-    --dim: rgba(255,255,255,0.55);
-    --line: rgba(255,255,255,0.1);
-    --accent: rgba(212, 184, 122, 0.95);
-    --accent-soft: rgba(212, 184, 122, 0.18);
-    --good: rgba(80, 227, 164, 0.95);
-    --bad: rgba(255, 110, 110, 0.95);
-    /* Style du tracé — synchronisé avec les sliders de l'éditeur via
-       meta.trace_style. Valeurs par défaut si le module n'a pas de réglage
-       (compat ascendante avec les modules anciens). */
+    /* Fonds */
+    --bg: #0a0506;
+    --bg-deep: #050203;
+    --oxblood: #1f0d10;
+    --velvet: #2a1014;
+
+    /* Or champagne (remplace l'ancien --accent doré standard) */
+    --accent: rgba(229,196,141,0.95);
+    --accent-solid: #e5c48d;
+    --accent-soft: rgba(229,196,141,0.18);
+    --accent-veil: rgba(229,196,141,0.08);
+    --accent-line: rgba(229,196,141,0.4);
+
+    /* Texte */
+    --fg: #f3e8d9;
+    --dim: rgba(243,232,217,0.65);
+    --faint: rgba(243,232,217,0.35);
+
+    /* Hairline / séparateur or */
+    --line: rgba(229,196,141,0.18);
+
+    /* Sémantique */
+    --good: rgba(120,210,160,0.95);
+    --bad:  rgba(255,140,140,0.85);
+
+    /* Topbar */
+    --topbar-bg: rgba(8,5,6,0.85);
+
+    /* Typographie */
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --sans:  'Inter', system-ui, -apple-system, sans-serif;
+
+    /* Trace style — conservé du repo, hérite de l'or via .quest-skel /
+       .observation-skel (la couleur est fixée dans les selecteurs) */
     --stroke-w: 3;
     --stroke-opacity: 0.92;
     --glow-r: 0px;
@@ -26,12 +57,21 @@
   html, body {
     margin: 0; padding: 0;
     background: var(--bg); color: var(--fg);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: var(--sans);
     height: 100%;
     overflow: hidden;
     /* Désactive partout l'overlay bleu/gris d'un long-press tactile */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+  }
+  /* Texture velours subtile en overlay : fine grain noise par-dessus le fond,
+     en mix-blend overlay pour donner l'aspect tissu. Pointer-events:none pour
+     ne pas intercepter les clics. z-index:1 — tout ce qui est interactif a
+     déjà un z-index ≥ 20 (topbar, screen, overlay, dialogue, counter). */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.5; mix-blend-mode: overlay;
   }
   /* Image master + SVG de contour : pas de highlight tap, pas de menu long-press,
      pas de sélection de texte/image (qui arrive sur Android avec un long-press). */
@@ -47,30 +87,38 @@
     -webkit-user-drag: none;
   }
 
-  /* ---- Top bar ---- */
+  /* ---- Top bar (Velours) ---- */
   .topbar {
     position: fixed; top: 0; left: 0; right: 0;
     height: 52px;
-    background: rgba(8,8,10,0.85); backdrop-filter: blur(10px);
+    background: var(--topbar-bg); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 16px; z-index: 30; gap: 12px;
   }
   .topbar a, .topbar button {
-    background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+    background: rgba(229,196,141,0.06); border: 1px solid var(--line);
     color: var(--fg); padding: 6px 12px; border-radius: 6px;
-    font: inherit; font-size: 12px; text-decoration: none; cursor: pointer;
+    font-family: var(--sans); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.04em; text-decoration: none; cursor: pointer;
+    transition: background 200ms, border-color 200ms;
   }
-  .topbar a:hover, .topbar button:hover { background: rgba(255,255,255,0.12); }
+  .topbar a:hover, .topbar button:hover {
+    background: rgba(229,196,141,0.12); border-color: var(--accent-line);
+  }
   .topbar .scene-name {
-    font-size: 13px; color: var(--accent); letter-spacing: 0.02em;
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 14px; color: var(--accent); letter-spacing: 0.01em;
     flex: 1; text-align: center;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     min-width: 0;
   }
   .topbar .level-pill {
-    background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
-    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    color: var(--accent);
+    padding: 5px 12px; border-radius: 999px;
+    font-family: var(--sans); font-weight: 500;
+    font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase;
     white-space: nowrap; flex-shrink: 0;
   }
   .topbar a, .topbar button { white-space: nowrap; flex-shrink: 0; }
@@ -83,7 +131,7 @@
     position: fixed; inset: 52px 0 0 0;
     overflow: hidden;
     display: flex; align-items: center; justify-content: center;
-    background: #050505;
+    background: var(--bg-deep);
   }
   .stage {
     position: relative;
@@ -185,10 +233,10 @@
     pointer-events: fill;
   }
 
-  /* ---- Brief / score / generic overlay screens ---- */
+  /* ---- Brief / score / generic overlay screens (panel velours) ---- */
   .screen {
     position: fixed; inset: 52px 0 0 0;
-    background: rgba(8,8,10,0.96);
+    background: rgba(8,5,6,0.96);
     backdrop-filter: blur(12px);
     display: none;
     align-items: center; justify-content: center;
@@ -197,31 +245,80 @@
     overflow-y: auto;
   }
   .screen.shown { display: flex; }
+  /* Panneau velours : dégradé bordeaux→velvet, hairline or, inset highlight or */
   .screen .panel {
-    max-width: 640px; width: 100%;
-    background: rgba(20,20,22,0.95);
+    max-width: 560px; width: 100%;
+    background: linear-gradient(180deg, var(--oxblood) 0%, var(--velvet) 100%);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 36px 32px;
+    border-radius: 8px;
+    box-shadow: 0 -1px 0 rgba(229,196,141,.10) inset, 0 24px 60px rgba(0,0,0,.5);
+    padding: 30px 26px;
     text-align: center;
   }
+  /* Si le panneau contient une .qcm-card (qui a déjà son propre style velours),
+     on neutralise le wrap externe pour éviter le double cadre. */
+  .screen .panel:has(.qcm-card) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    max-width: 560px;
+  }
+  /* Eyebrow champagne en très petit, lettres espacées (✦ ACTE I ✦) */
+  .eyebrow {
+    font-family: var(--sans); font-weight: 500;
+    font-size: 9px; letter-spacing: 3.5px; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  /* Filet or dégradé qui sépare titre et corps */
+  .rule {
+    width: 56px; height: 1px; margin: 16px auto 18px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    border: 0;
+  }
   .screen h2 {
-    font-weight: 300; font-size: 24px; letter-spacing: 0.01em;
-    color: var(--accent); margin: 0 0 8px;
+    font-family: var(--serif); font-style: italic; font-weight: 300;
+    font-size: 26px; letter-spacing: -0.3px; line-height: 1.15;
+    color: var(--fg); margin: 0;
   }
-  .screen p { color: var(--dim); font-size: 14px; line-height: 1.6; margin: 8px 0; }
+  .screen h2 em {
+    font-style: italic; color: var(--accent); font-weight: 200;
+  }
+  .screen p {
+    color: var(--dim);
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 15px; line-height: 1.55; margin: 10px 0;
+  }
   .screen .big { color: var(--fg); font-size: 16px; }
+  /* Bouton primaire or — texte oxblood, filet inset blanc, ombre or chaude */
   .screen .btn {
-    margin-top: 18px;
-    background: var(--accent-soft); border: 1px solid var(--accent);
-    color: var(--accent);
-    padding: 12px 26px; border-radius: 8px;
-    font: inherit; font-size: 13px; cursor: pointer;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    transition: background 200ms;
+    margin-top: 14px;
+    height: 48px; padding: 0 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
+    border: none; color: var(--oxblood);
+    border-radius: 4px;
+    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    letter-spacing: 2.6px; text-transform: uppercase;
+    text-decoration: none;
+    box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
+    cursor: pointer;
+    transition: filter 200ms, transform 200ms;
   }
-  .screen .btn:hover { background: rgba(212,184,122,0.32); }
-  .screen .btn.secondary { background: rgba(255,255,255,0.04); border-color: var(--line); color: var(--fg); }
+  .screen .btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .screen .btn:active { transform: translateY(0); filter: brightness(0.96); }
+  .screen .btn:disabled { filter: grayscale(0.4) brightness(0.7); cursor: not-allowed; }
+  .screen .btn.secondary {
+    height: 44px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    letter-spacing: 1.8px;
+    box-shadow: none;
+  }
+  .screen .btn.secondary:hover {
+    background: rgba(229,196,141,.08); border-color: var(--accent-line); filter: none;
+  }
 
   .timer-ring {
     width: 120px; height: 120px; margin: 16px auto;
@@ -238,53 +335,84 @@
     font-size: 32px; font-weight: 300; letter-spacing: 0.04em;
   }
 
-  /* ---- QCM ---- */
+  /* ---- QCM (panel velours) ---- */
   .qcm-card {
-    max-width: 640px; width: 100%;
-    background: rgba(20,20,22,0.95);
+    max-width: 560px; width: 100%;
+    background: linear-gradient(180deg, var(--oxblood) 0%, var(--velvet) 100%);
     border: 1px solid var(--line);
-    border-radius: 14px; padding: 28px 28px;
+    border-radius: 8px;
+    box-shadow: 0 -1px 0 rgba(229,196,141,.10) inset, 0 24px 60px rgba(0,0,0,.5);
+    padding: 26px 24px;
+  }
+  .qcm-progress {
+    font-family: var(--sans); font-weight: 500;
+    font-size: 9px; color: var(--faint);
+    letter-spacing: 2.4px; text-transform: uppercase;
+    margin-bottom: 12px;
   }
   .qcm-card h3 {
-    font-weight: 400; font-size: 17px;
-    color: var(--fg); margin: 0 0 6px; line-height: 1.4;
+    font-family: var(--serif); font-style: italic; font-weight: 300;
+    font-size: 19px; line-height: 1.35; letter-spacing: -0.2px;
+    color: var(--fg); margin: 0 0 4px;
   }
-  .qcm-progress { font-size: 11px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 18px; }
   .qcm-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
   .qcm-choice {
-    background: rgba(255,255,255,0.04);
+    background: rgba(0,0,0,.18);
     border: 1px solid var(--line);
-    border-radius: 8px; padding: 14px 16px;
-    color: var(--fg); font-size: 14px;
+    border-radius: 6px; padding: 12px 14px;
+    color: var(--fg);
+    font-family: var(--sans); font-size: 13px; line-height: 1.4;
     cursor: pointer; text-align: left;
-    transition: background 150ms, border-color 150ms;
-    line-height: 1.4;
+    transition: background 150ms, border-color 150ms, color 150ms;
   }
-  .qcm-choice:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
-  .qcm-choice.picked.good { background: rgba(80,227,164,0.16); border-color: var(--good); color: var(--good); }
-  .qcm-choice.picked.bad  { background: rgba(255,110,110,0.16); border-color: var(--bad);  color: var(--bad); }
-  .qcm-choice.was-correct { border-color: var(--good); }
+  .qcm-choice:hover:not(:disabled) {
+    background: rgba(229,196,141,.06);
+    border-color: var(--accent-line);
+  }
+  .qcm-choice.picked.good {
+    background: rgba(120,210,160,.12);
+    border-color: var(--good); color: var(--good);
+  }
+  .qcm-choice.picked.bad {
+    background: rgba(255,140,140,.10);
+    border-color: rgba(255,140,140,.5);
+    color: rgba(255,180,180,.95);
+  }
+  .qcm-choice.was-correct {
+    border-color: var(--good);
+    background: rgba(120,210,160,.08);
+    color: var(--good);
+  }
   .qcm-choice:disabled { cursor: default; }
+  /* Encart or italique pour l'explication — même esprit qu'une note de programme */
   .qcm-explain {
     margin-top: 18px; padding: 14px 16px;
-    background: rgba(212,184,122,0.07);
+    background: var(--accent-veil);
     border-left: 3px solid var(--accent);
     border-radius: 4px;
-    color: var(--fg); font-size: 13px; line-height: 1.6;
+    color: var(--fg);
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 14px; line-height: 1.6;
     text-align: left;
     display: none;
   }
   .qcm-explain.shown { display: block; }
   .qcm-next {
     margin-top: 18px;
-    background: var(--accent-soft); border: 1px solid var(--accent);
-    color: var(--accent);
-    padding: 10px 22px; border-radius: 8px;
-    font: inherit; font-size: 12px; cursor: pointer;
-    letter-spacing: 0.06em; text-transform: uppercase;
+    height: 42px; padding: 0 24px;
+    background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
+    border: none; color: var(--oxblood);
+    border-radius: 4px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
+    cursor: pointer;
+    transition: filter 200ms, transform 200ms;
     display: none;
   }
   .qcm-next.shown { display: inline-block; }
+  .qcm-next:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .qcm-next:active { transform: translateY(0); filter: brightness(0.96); }
 
   /* ---- Quest interaction (et observation niveau 1) ----
      L'overlay reste TOUJOURS dans le DOM ; on contrôle sa visibilité via
@@ -326,44 +454,59 @@
   .quest-img-wrap img.fade-out { opacity: 0; }
   .quest-caption {
     position: absolute; left: 16px; right: 16px; bottom: 16px;
-    background: rgba(8,8,10,0.78); backdrop-filter: blur(8px);
+    background: rgba(8,5,6,0.78); backdrop-filter: blur(8px);
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 12px 16px;
-    font-size: 13px; line-height: 1.5;
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 14px; line-height: 1.55;
     color: var(--fg);
     max-width: 720px; margin: 0 auto;
     pointer-events: none;
   }
   .quest-actions {
     margin-top: 12px;
-    display: flex; gap: 8px; align-items: center;
+    display: flex; gap: 10px; align-items: center;
   }
-  .quest-actions .badge { font-size: 11px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
-
-  .talk-btn {
-    background: var(--accent-soft); border: 1px solid var(--accent);
+  .quest-actions .badge {
+    font-family: var(--sans); font-weight: 500;
+    font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase;
     color: var(--accent);
-    padding: 12px 28px; border-radius: 999px;
-    font: inherit; font-size: 13px; cursor: pointer;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    transition: background 200ms;
-    box-shadow: 0 0 24px rgba(212,184,122,0.25);
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
   }
-  .talk-btn:hover { background: rgba(212,184,122,0.35); }
+
+  /* Talk-button : pill or pleine, lettre espacée, halo or chaud */
+  .talk-btn {
+    background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
+    border: none; color: var(--oxblood);
+    padding: 11px 26px; border-radius: 999px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    box-shadow: 0 0 20px rgba(229,196,141,.30), 0 1px 0 rgba(255,255,255,.30) inset;
+    cursor: pointer;
+    transition: filter 200ms, transform 200ms;
+  }
+  .talk-btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .talk-btn:active { transform: translateY(0); filter: brightness(0.96); }
+  /* Flèche image : disque or-veil avec hairline */
   .img-arrow {
-    background: rgba(255,255,255,0.1); border: 1px solid var(--line);
+    background: rgba(229,196,141,.06);
+    border: 1px solid var(--line);
     color: var(--fg);
     width: 38px; height: 38px; border-radius: 50%;
-    cursor: pointer; font-size: 18px;
+    cursor: pointer; font-size: 16px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
+    transition: background 200ms, border-color 200ms;
   }
-  .img-arrow:hover { background: rgba(255,255,255,0.2); }
+  .img-arrow:hover {
+    background: rgba(229,196,141,.12); border-color: var(--accent-line); color: var(--accent);
+  }
 
-  /* ---- Dialogue modal ---- */
+  /* ---- Dialogue modal (bottom-sheet velours) ---- */
   .dialogue {
     position: fixed; inset: 0;
-    background: rgba(5,5,8,0.4);
+    background: rgba(5,3,4,0.5);
     backdrop-filter: blur(6px);
     z-index: 50;
     display: none;
@@ -372,70 +515,134 @@
   }
   .dialogue.shown { display: flex; }
   .dialogue-card {
-    width: 100%; max-width: 600px;
-    background: rgba(20,20,22,0.94);
+    width: 100%; max-width: 560px;
+    background: linear-gradient(180deg, var(--oxblood) 0%, var(--velvet) 100%);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(212,184,122,0.4);
-    border-radius: 14px;
-    padding: 24px 22px;
+    border: 1px solid var(--accent-line);
+    border-radius: 8px;
+    padding: 26px 22px;
     color: var(--fg);
-    box-shadow: 0 -10px 40px rgba(0,0,0,0.55);
+    box-shadow: 0 -20px 60px rgba(0,0,0,.6),
+                0 -1px 0 rgba(229,196,141,.18) inset;
+  }
+  /* Eyebrow or au-dessus du titre — injecté par play.js avec la classe .eyebrow */
+  .dialogue-card .eyebrow {
+    text-align: center;
+    margin-bottom: 8px;
   }
   .dialogue-card h4 {
     margin: 0 0 14px;
-    font-weight: 400; font-size: 14px;
-    color: var(--accent);
-    letter-spacing: 0.02em;
+    font-family: var(--serif); font-style: italic; font-weight: 300;
+    font-size: 17px; line-height: 1.35; letter-spacing: -0.2px;
+    color: var(--fg);
+    text-align: center;
   }
   .dialogue-choice {
     width: 100%;
-    background: rgba(255,255,255,0.05);
+    background: rgba(0,0,0,.18);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 12px 14px;
-    color: var(--fg); font-size: 13px; line-height: 1.4;
+    color: var(--fg);
+    font-family: var(--sans); font-size: 13px; line-height: 1.4;
     text-align: left; cursor: pointer;
     margin-bottom: 8px;
-    transition: background 150ms, border-color 150ms;
+    transition: background 150ms, border-color 150ms, color 150ms;
   }
   .dialogue-choice:hover:not(:disabled) {
-    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.18);
+    background: rgba(229,196,141,.06);
+    border-color: var(--accent-line);
   }
-  .dialogue-choice.picked.best { background: rgba(80,227,164,0.16); border-color: var(--good); color: var(--good); }
-  .dialogue-choice.picked.notbest { background: rgba(255,255,255,0.04); border-color: var(--line); color: var(--dim); }
+  .dialogue-choice.picked.best {
+    background: rgba(120,210,160,.12);
+    border-color: var(--good); color: var(--good);
+  }
+  .dialogue-choice.picked.notbest {
+    background: rgba(255,255,255,.03);
+    border-color: var(--line); color: var(--faint);
+  }
+  /* Feedback : encart or italique, comme une note de programme */
   .dialogue-feedback {
     margin-top: 16px;
     padding: 14px 16px;
-    background: rgba(212,184,122,0.08);
+    background: var(--accent-veil);
     border-left: 3px solid var(--accent);
     border-radius: 4px;
-    font-size: 13px; line-height: 1.6;
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 14px; line-height: 1.6;
+    color: var(--fg);
     display: none;
   }
   .dialogue-feedback.shown { display: block; }
+  /* Préfixes "Meilleur choix" / "Choix possible" — sans-serif, lettrage espacé */
+  .dialogue-feedback .lead {
+    display: block;
+    font-family: var(--sans); font-style: normal; font-weight: 600;
+    font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .dialogue-feedback .lead.best { color: var(--good); }
+  .dialogue-feedback .lead.alt  { color: var(--accent); }
   .dialogue-close {
     margin-top: 14px;
-    background: var(--accent-soft); border: 1px solid var(--accent);
-    color: var(--accent);
-    padding: 10px 22px; border-radius: 8px;
-    font: inherit; font-size: 12px; cursor: pointer;
-    letter-spacing: 0.06em; text-transform: uppercase;
+    height: 42px; padding: 0 24px;
+    background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
+    border: none; color: var(--oxblood);
+    border-radius: 4px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
+    cursor: pointer;
+    transition: filter 200ms, transform 200ms;
     display: none;
   }
   .dialogue-close.shown { display: inline-block; }
+  .dialogue-close:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  .dialogue-close:active { transform: translateY(0); filter: brightness(0.96); }
 
-  /* ---- HUD: quest counter ---- */
+  /* ---- HUD: quest counter (pill or, lettrage espacé) ---- */
   .quest-counter {
     position: fixed; top: 64px; right: 16px;
-    background: rgba(8,8,10,0.8); backdrop-filter: blur(6px);
-    border: 1px solid var(--accent);
+    background: rgba(8,5,6,0.8); backdrop-filter: blur(6px);
+    border: 1px solid var(--accent-line);
     color: var(--accent);
-    padding: 8px 14px; border-radius: 999px;
-    font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 7px 14px; border-radius: 999px;
+    font-family: var(--sans); font-weight: 500;
+    font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
     z-index: 25;
     display: none;
   }
   .quest-counter.shown { display: block; }
+  /* Hint discret bas-centre quand on est sur la quest map */
+  .quest-hint {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 24;
+    color: var(--dim);
+    font-family: var(--serif); font-style: italic;
+    font-size: 13px; line-height: 1.4;
+    background: rgba(8,5,6,0.7); backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 18px;
+    pointer-events: none;
+    max-width: 90vw; text-align: center;
+    display: none;
+  }
+  .quest-hint.shown { display: block; }
+  /* Pourcentage géant or pour le score (niveau 1) */
+  .score-pct {
+    font-family: var(--serif); font-style: italic; font-weight: 200;
+    font-size: 56px; letter-spacing: -2px; line-height: 1;
+    color: var(--accent);
+    margin: 8px 0 4px;
+  }
+  /* Titre "Bravo !" géant or pour le score niveau 2 */
+  .grand-title {
+    font-family: var(--serif); font-style: italic; font-weight: 200;
+    font-size: 44px; letter-spacing: -1.5px; line-height: 1;
+    color: var(--accent);
+    margin: 0;
+  }
 </style>
 </head>
 <body>
@@ -460,6 +667,7 @@
 </div>
 
 <div class="quest-counter" id="quest-counter"></div>
+<div class="quest-hint" id="quest-hint"></div>
 
 <!-- Brief / observation timer / score / quest brief -->
 <div class="screen" id="screen">

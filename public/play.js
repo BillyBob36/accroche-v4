@@ -170,15 +170,17 @@ function showLevelMenu() {
   const nQ = (game.scene.level1_questions || []).length;
   const nQuests = (game.scene.quests || []).length;
   setScreen(`
-    <h2>${game.scene.name}</h2>
-    <p style="margin-top:14px;">Bienvenue. Cette formation comporte deux niveaux :</p>
-    <p class="big" style="margin-top:18px;"><strong>Niveau 1 — Observation</strong></p>
-    <p style="margin-top:4px;">${nQ} questions disponibles · ${LEVEL1_TIMER_SECONDS}s d'observation · ${LEVEL1_QUESTION_COUNT} questions tirées au hasard.</p>
-    <p class="big" style="margin-top:18px;"><strong>Niveau 2 — Approche commerciale</strong></p>
-    <p style="margin-top:4px;">${nQuests} mini-quête${nQuests > 1 ? 's' : ''} à compléter.</p>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:24px;flex-wrap:wrap;">
-      <button class="btn" id="start-1" ${nQ < 2 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>Niveau 1 →</button>
-      <button class="btn secondary" id="start-2" ${nQuests < 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>Niveau 2 →</button>
+    <div class="eyebrow">✦ École de la maison ✦</div>
+    <h2>${escapeHtml(game.scene.name)}</h2>
+    <hr class="rule">
+    <p>Bienvenue. Cette formation comporte deux niveaux.</p>
+    <p class="big" style="margin-top:14px;"><strong>Niveau 1 — Observation</strong></p>
+    <p style="margin-top:2px;">${nQ} questions disponibles · ${LEVEL1_TIMER_SECONDS}s d'observation · ${LEVEL1_QUESTION_COUNT} tirées au hasard.</p>
+    <p class="big" style="margin-top:14px;"><strong>Niveau 2 — Approche commerciale</strong></p>
+    <p style="margin-top:2px;">${nQuests} mini-quête${nQuests > 1 ? 's' : ''} à compléter.</p>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap;">
+      <button class="btn" id="start-1" ${nQ < 2 ? 'disabled' : ''}>Niveau 1 →</button>
+      <button class="btn secondary" id="start-2" ${nQuests < 1 ? 'disabled' : ''}>Niveau 2 →</button>
     </div>
   `);
   $('start-1')?.addEventListener('click', startLevel1);
@@ -191,8 +193,10 @@ function startLevel1() {
   setLevelPill('Niveau 1 · Observation');
   // Brief screen
   setScreen(`
-    <h2>Niveau 1 — Observation</h2>
-    <p style="margin-top:14px;">Vous arrivez sur le pas de la porte d'une boutique. Survolez les personnages pour les identifier, cliquez pour zoomer.</p>
+    <div class="eyebrow">✦ Acte I ✦</div>
+    <h2>Observation</h2>
+    <hr class="rule">
+    <p>Vous arrivez sur le pas de la porte d'une boutique. Survolez les personnages pour les identifier, cliquez pour zoomer.</p>
     <p>Mémorisez : qui est présent, comment ils sont placés, ce qu'ils font. Vous serez interrogé ensuite.</p>
     <button class="btn" id="go-observe">Commencer l'observation</button>
   `);
@@ -455,10 +459,12 @@ function showScore() {
   else if (pct >= 50) verdict = 'Bonne observation, mais quelques détails t\'ont échappé.';
   else verdict = 'Recommence — l\'observation est la première compétence du vendeur.';
   setScreen(`
-    <h2>Score : ${game.score} / ${total}</h2>
-    <p style="font-size:32px;color:var(--accent);font-weight:300;margin:8px 0;">${pct}%</p>
-    <p>${verdict}</p>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap;">
+    <div class="eyebrow">✦ Verdict ✦</div>
+    <h2>Score : <em>${game.score} / ${total}</em></h2>
+    <div class="score-pct">${pct}%</div>
+    <hr class="rule">
+    <p>${escapeHtml(verdict)}</p>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;">
       <button class="btn secondary" id="back-menu">← Menu</button>
       <button class="btn" id="goto-2">Niveau 2 →</button>
     </div>
@@ -477,10 +483,12 @@ function startLevel2() {
   $('quest-counter').classList.remove('shown');
   const total = (game.scene.quests || []).length;
   setScreen(`
-    <h2>Niveau 2 — Approche commerciale</h2>
-    <p style="margin-top:14px;">Vous êtes vendeur·se dans cette boutique. Identifiez les opportunités et engagez la conversation avec les clients.</p>
-    <p class="big" style="margin-top:18px;">Complétez les <strong>${total} mini-quête${total > 1 ? 's' : ''}</strong> en cliquant sur les groupes mis en valeur.</p>
-    <p style="margin-top:14px;color:var(--dim);font-size:12px;">Progression : 0 / ${total}</p>
+    <div class="eyebrow">✦ Acte II ✦</div>
+    <h2>Approche commerciale</h2>
+    <hr class="rule">
+    <p>Vous êtes vendeur·se dans cette boutique. Identifiez les opportunités et engagez la conversation avec les clients.</p>
+    <p class="big" style="margin-top:14px;">Complétez les <strong>${total} mini-quête${total > 1 ? 's' : ''}</strong> en cliquant sur les groupes mis en valeur.</p>
+    <p style="margin-top:14px;color:var(--faint);font-family:var(--sans);font-style:normal;font-size:9px;letter-spacing:2.4px;text-transform:uppercase;">Progression · 0 / ${total}</p>
     <button class="btn" id="go-quests">Commencer</button>
   `);
   $('go-quests').addEventListener('click', enterQuestMap);
@@ -491,6 +499,12 @@ function enterQuestMap() {
   blurStage(false);
   renderQuestLayer();
   updateQuestCounter();
+  // Hint discret bas-centre : disparaît au premier clic sur un personnage.
+  const hint = $('quest-hint');
+  if (hint) {
+    hint.textContent = 'Touchez un personnage doré pour engager la conversation.';
+    hint.classList.add('shown');
+  }
 }
 
 function updateQuestCounter() {
@@ -551,6 +565,8 @@ async function renderQuestLayer() {
 function openQuest(q) {
   game.currentQuestId = q.id;
   game.currentQuestImage = 1;
+  // Le hint bas-centre s'efface dès qu'on engage avec un personnage.
+  $('quest-hint')?.classList.remove('shown');
   // Trouve le box lié à la quête pour appliquer le zoom cinématique sur le master.
   const box = (game.scene.boxes || []).find(b => String(b.id) === String(q.box_id));
   if (box) applyZoomToBox(box);
@@ -622,7 +638,17 @@ function showQuestImage() {
 function openDialogue() {
   const q = (game.scene.quests || []).find(x => x.id === game.currentQuestId);
   if (!q) return;
-  $('dialogue-title').textContent = q.title ? `${q.title} — Que dites-vous ?` : 'Que dites-vous ?';
+  // Titre serif italique centré, précédé d'un eyebrow or "✦ TITRE QUÊTE ✦" si dispo.
+  // L'eyebrow est injecté dans le markup du h4 — pas besoin d'élément séparé,
+  // on remplace simplement le contenu avec un sous-élément stylé.
+  const titleEl = $('dialogue-title');
+  if (q.title) {
+    titleEl.innerHTML =
+      `<div class="eyebrow">✦ ${escapeHtml(q.title)} ✦</div>` +
+      `Que dites-vous ?`;
+  } else {
+    titleEl.textContent = 'Que dites-vous ?';
+  }
   // Shuffle dialogue choices but track which one was the best
   const order = shuffle(q.dialogue_choices.map((_, i) => i));
   const box = $('dialogue-choices');
@@ -653,7 +679,9 @@ function onDialoguePick(q, origIdx, btn) {
   if (!text) text = isBest
     ? 'Bon choix — vous établissez une vraie connexion.'
     : 'Pas le meilleur — la cliente reste sur la défensive.';
-  fb.innerHTML = `<strong style="color:${isBest ? 'var(--good)' : 'var(--dim)'};">${isBest ? '★ Meilleur choix' : 'Choix possible'}</strong><br>${escapeHtml(text)}`;
+  fb.innerHTML =
+    `<span class="lead ${isBest ? 'best' : 'alt'}">${isBest ? '★ Meilleur choix' : 'Choix possible'}</span>` +
+    escapeHtml(text);
   fb.classList.add('shown');
   $('dialogue-close').classList.add('shown');
 }
@@ -670,12 +698,15 @@ $('dialogue-close').addEventListener('click', () => {
 
 function showLevel2Score() {
   $('quest-counter').classList.remove('shown');
+  $('quest-hint')?.classList.remove('shown');
   blurStage(true);
   setScreen(`
-    <h2>Bravo !</h2>
-    <p style="margin-top:14px;">Vous avez complété les <strong>${game.questsDone.size}</strong> mini-quêtes de ce module.</p>
+    <div class="eyebrow">✦ Rideau ✦</div>
+    <div class="grand-title">Bravo&nbsp;!</div>
+    <hr class="rule">
+    <p>Vous avez complété les <strong>${game.questsDone.size}</strong> mini-quêtes de ce module.</p>
     <p>Continuez à pratiquer — chaque client mérite une approche personnalisée.</p>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap;">
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap;">
       <button class="btn secondary" id="back-menu">← Menu</button>
       <a class="btn" href="library.html">Bibliothèque</a>
     </div>

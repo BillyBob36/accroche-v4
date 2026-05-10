@@ -272,3 +272,12 @@ Sous-dossiers d'intérêt :
 
 ⚠️ Ne pas indexer le monorepo entier — pointer Claude Design vers
 `public/` uniquement.
+
+---
+
+## 12. Comment utiliser Claude Design avec ce repo
+
+Voir le tutoriel détaillé pas-à-pas : [design/CLAUDE_DESIGN_TUTORIAL.md](design/CLAUDE_DESIGN_TUTORIAL.md)
+
+Et les 11 prompts par écran du mode jeu, prêts à coller dans Claude
+Design : [design/PLAY_SCREENS.md](design/PLAY_SCREENS.md)

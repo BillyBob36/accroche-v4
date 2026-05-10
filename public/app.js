@@ -914,53 +914,107 @@ document.addEventListener('click', e => {
   }
 });
 
+// ---- Sliders du module Tracé ----
+// Les valeurs s'appliquent en CSS variables (visible immédiatement dans
+// l'éditeur), persistent dans localStorage (entre sessions, sur cette
+// machine), ET — quand un module est chargé — dans `sceneState.meta.trace_style`,
+// qui est sauvé via /api/scenes/<id>/meta avec un debounce. Le PLAYER lira
+// `meta.trace_style` au chargement et appliquera les mêmes vars CSS, donc le
+// joueur voit exactement les mêmes contours que l'éditeur.
+
+let _traceStylePushTimer = null;
+function pushTraceStyleToScene() {
+  if (!sceneState || !sceneState.id) return;
+  clearTimeout(_traceStylePushTimer);
+  _traceStylePushTimer = setTimeout(async () => {
+    const trace_style = {
+      stroke: parseFloat(localStorage.getItem('accroche-stroke') || '3'),
+      opacity: parseFloat(localStorage.getItem('accroche-opacity') || '0.92'),
+      glow: parseFloat(localStorage.getItem('accroche-glow') || '0'),
+    };
+    try { await saveSceneMeta({ trace_style }); } catch {}
+  }, 500);  // debounce, évite un POST à chaque pixel du slider
+}
+
 // Glow slider — soft drop-shadow on the active skel-group as a whole.
 (() => {
   const root = document.documentElement;
   const inp = $('glow'), val = $('glow-val');
-  function apply(v) {
+  function apply(v, fromUser) {
     const f = Number(v);
     val.textContent = f.toFixed(2);
     root.style.setProperty('--glow-r', `${(f * 18).toFixed(1)}px`);
     root.style.setProperty('--glow-a', (f * 0.95).toFixed(3));
     document.body.classList.toggle('no-glow', f === 0);
     localStorage.setItem('accroche-glow', v);
+    if (fromUser) pushTraceStyleToScene();
   }
   const saved = localStorage.getItem('accroche-glow');
   if (saved !== null) inp.value = saved;
-  apply(inp.value);
-  inp.addEventListener('input', e => apply(e.target.value));
+  apply(inp.value, false);
+  inp.addEventListener('input', e => apply(e.target.value, true));
 })();
 
 // Stroke-width slider — controls how thick the contour appears.
 (() => {
   const root = document.documentElement;
   const inp = $('stroke'), val = $('stroke-val');
-  function apply(v) {
+  function apply(v, fromUser) {
     val.textContent = Number(v).toFixed(1);
     root.style.setProperty('--stroke-w', v);
     localStorage.setItem('accroche-stroke', v);
+    if (fromUser) pushTraceStyleToScene();
   }
   const saved = localStorage.getItem('accroche-stroke');
   if (saved !== null) inp.value = saved;
-  apply(inp.value);
-  inp.addEventListener('input', e => apply(e.target.value));
+  apply(inp.value, false);
+  inp.addEventListener('input', e => apply(e.target.value, true));
 })();
 
 // Stroke-opacity slider — slight transparency on the contour for a softer look.
 (() => {
   const root = document.documentElement;
   const inp = $('opacity'), val = $('opacity-val');
-  function apply(v) {
+  function apply(v, fromUser) {
     val.textContent = Number(v).toFixed(2);
     root.style.setProperty('--stroke-opacity', v);
     localStorage.setItem('accroche-opacity', v);
+    if (fromUser) pushTraceStyleToScene();
   }
   const saved = localStorage.getItem('accroche-opacity');
   if (saved !== null) inp.value = saved;
-  apply(inp.value);
-  inp.addEventListener('input', e => apply(e.target.value));
+  apply(inp.value, false);
+  inp.addEventListener('input', e => apply(e.target.value, true));
 })();
+
+// Au chargement d'un module : si meta.trace_style existe, on pré-remplit
+// les sliders + applique. Comme ça l'éditeur reflète d'emblée le style du
+// module ouvert (au lieu de toujours partir du localStorage).
+function applyTraceStyleFromMeta(meta) {
+  if (!meta || !meta.trace_style) return;
+  const ts = meta.trace_style;
+  const root = document.documentElement;
+  if (typeof ts.stroke === 'number') {
+    $('stroke').value = ts.stroke;
+    $('stroke-val').textContent = ts.stroke.toFixed(1);
+    root.style.setProperty('--stroke-w', String(ts.stroke));
+    localStorage.setItem('accroche-stroke', String(ts.stroke));
+  }
+  if (typeof ts.opacity === 'number') {
+    $('opacity').value = ts.opacity;
+    $('opacity-val').textContent = ts.opacity.toFixed(2);
+    root.style.setProperty('--stroke-opacity', String(ts.opacity));
+    localStorage.setItem('accroche-opacity', String(ts.opacity));
+  }
+  if (typeof ts.glow === 'number') {
+    $('glow').value = ts.glow;
+    $('glow-val').textContent = ts.glow.toFixed(2);
+    root.style.setProperty('--glow-r', `${(ts.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a', (ts.glow * 0.95).toFixed(3));
+    document.body.classList.toggle('no-glow', ts.glow === 0);
+    localStorage.setItem('accroche-glow', String(ts.glow));
+  }
+}
 
 $('gen-master').addEventListener('click', async () => {
   const prompt = $('prompt').value.trim();
@@ -1062,6 +1116,11 @@ async function loadCurrentSceneMeta() {
   if (!r.ok) return null;
   sceneState.meta = await r.json();
   refreshSceneBanner();
+  // Applique le trace_style du module sur les sliders + CSS, pour que
+  // l'éditeur reflète exactement ce que verra le joueur.
+  if (typeof applyTraceStyleFromMeta === 'function') {
+    applyTraceStyleFromMeta(sceneState.meta);
+  }
   return sceneState.meta;
 }
 
@@ -1135,6 +1194,9 @@ $('save-scene').addEventListener('click', async () => {
   sceneState.id = j.scene.id;
   sceneState.meta = j.scene;
   refreshSceneBanner();
+  // Pousse le trace_style courant (sliders éditeur) dans le meta du nouveau
+  // module — comme ça les joueurs verront les contours avec le même style.
+  pushTraceStyleToScene();
   // Update URL so reload preserves context
   const u = new URL(location.href);
   u.searchParams.set('scene', sceneState.id);

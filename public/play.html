@@ -14,6 +14,13 @@
     --accent-soft: rgba(212, 184, 122, 0.18);
     --good: rgba(80, 227, 164, 0.95);
     --bad: rgba(255, 110, 110, 0.95);
+    /* Style du tracé — synchronisé avec les sliders de l'éditeur via
+       meta.trace_style. Valeurs par défaut si le module n'a pas de réglage
+       (compat ascendante avec les modules anciens). */
+    --stroke-w: 3;
+    --stroke-opacity: 0.92;
+    --glow-r: 0px;
+    --glow-a: 0;
   }
   *, *:before, *:after { box-sizing: border-box; }
   html, body {
@@ -134,7 +141,8 @@
   .quest-skel path {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 3;
+    stroke-width: var(--stroke-w);
+    stroke-opacity: var(--stroke-opacity);
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
@@ -157,7 +165,8 @@
   .observation-skel path {
     fill: none;
     stroke: white;
-    stroke-width: 3;
+    stroke-width: var(--stroke-w);
+    stroke-opacity: var(--stroke-opacity);
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
@@ -165,8 +174,10 @@
     transition: opacity 240ms ease;
   }
   .observation-skel.active path {
-    opacity: 0.9;
-    filter: drop-shadow(0 0 6px rgba(255,255,255,0.5));
+    opacity: 1;
+    /* Le glow utilise les variables CSS pilotées par meta.trace_style.
+       Si --glow-a vaut 0 (par défaut), pas de drop-shadow visible. */
+    filter: drop-shadow(0 0 var(--glow-r) rgba(255,255,255,var(--glow-a)));
   }
   .observation-hit {
     fill: rgba(0,0,0,0);

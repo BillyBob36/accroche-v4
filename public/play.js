@@ -137,8 +137,31 @@ async function init() {
   game.scene = await r.json();
   $('scene-name').textContent = game.scene.name;
   $('master').src = `scenes/${sceneId}/${game.scene.master_filename || 'master.jpg'}`;
+  // Applique le style du tracé sauvegardé dans le module (cf. l'éditeur).
+  // Sans ça, les contours du player ont un style fixe (3 px, opacité 0.92,
+  // pas de glow) qui peut différer de ce qu'a réglé l'auteur dans l'éditeur.
+  applyTraceStyle(game.scene.trace_style);
   // Welcome screen → choose level
   showLevelMenu();
+}
+
+// Synchronisation du style du tracé entre éditeur et player.
+// Appelé au chargement d'un module : pose les vars CSS --stroke-w,
+// --stroke-opacity, --glow-r, --glow-a sur :root pour que .observation-skel
+// et .quest-skel les utilisent.
+function applyTraceStyle(ts) {
+  if (!ts || typeof ts !== 'object') return;
+  const root = document.documentElement;
+  if (typeof ts.stroke === 'number') {
+    root.style.setProperty('--stroke-w', String(ts.stroke));
+  }
+  if (typeof ts.opacity === 'number') {
+    root.style.setProperty('--stroke-opacity', String(ts.opacity));
+  }
+  if (typeof ts.glow === 'number') {
+    root.style.setProperty('--glow-r', `${(ts.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a', (ts.glow * 0.95).toFixed(3));
+  }
 }
 
 function showLevelMenu() {
@@ -205,10 +228,16 @@ function runObservationPhase() {
   cta.style.display = 'inline-block';
 
   function tick() {
-    counter.textContent = secs > 0
-      ? `Observation · ${secs}s`
-      : `Observation libre`;
-    if (secs > 0) secs--;
+    if (secs > 0) {
+      counter.textContent = `Observation · ${secs}s`;
+      secs--;
+    } else {
+      // Temps écoulé → bascule automatique aux questions, même si l'utilisateur
+      // est zoomé sur un perso (image B). endObservation s'occupe de fermer
+      // l'overlay et de reset le zoom.
+      counter.textContent = `Temps écoulé…`;
+      endObservation();
+    }
   }
   tick();
   _observationTickHandle = setInterval(tick, 1000);
@@ -219,6 +248,18 @@ function endObservation() {
   $('quest-counter').classList.remove('shown');
   const cta = document.getElementById('observation-cta');
   if (cta) cta.style.display = 'none';
+  // Si un overlay (image B / zoom) est ouvert, on le ferme avant de basculer
+  // aux questions. resetZoomToHome remet le master à sa position d'origine.
+  const overlay = $('quest-overlay');
+  if (overlay.classList.contains('shown')) {
+    overlay.classList.remove('shown');
+    overlay.onclick = null;
+    $('quest-img').onclick = null;
+  }
+  // Reset zoom (au cas où un applyZoomToBox était en cours).
+  if (typeof resetZoomToHome === 'function') {
+    try { resetZoomToHome(); } catch {}
+  }
   // Retire les contours et hit-zones du master + scroll listener.
   $('stage-wrap').removeEventListener('scroll', updateObservationByScroll);
   _observationSortedBoxes = [];

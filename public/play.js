@@ -488,7 +488,7 @@ function startLevel2() {
     <hr class="rule">
     <p>Vous êtes vendeur·se dans cette boutique. Identifiez les opportunités et engagez la conversation avec les clients.</p>
     <p class="big" style="margin-top:14px;">Complétez les <strong>${total} mini-quête${total > 1 ? 's' : ''}</strong> en cliquant sur les groupes mis en valeur.</p>
-    <p style="margin-top:14px;color:var(--faint);font-family:var(--sans);font-style:normal;font-size:11px;letter-spacing:2.4px;text-transform:uppercase;">Progression · 0 / ${total}</p>
+    <p style="margin-top:14px;color:var(--faint);font-family:var(--sans);font-style:normal;font-size:14px;letter-spacing:1.5px;text-transform:uppercase;">Progression : 0 / ${total}</p>
     <button class="btn" id="go-quests">Commencer</button>
   `);
   $('go-quests').addEventListener('click', enterQuestMap);
@@ -639,127 +639,145 @@ function swapToImageC(q) {
   img.onclick = null;  // on ne re-déclenche plus rien sur le tap image
 }
 
-// État local du carousel (mis à jour par le scroll). On stocke la fonction
-// detach pour pouvoir nettoyer le listener quand le dialogue se ferme.
-let _dialogueCarouselDetach = null;
+// État local du dialogue v2 — l'index courant du carousel + l'ordre des
+// choix mélangé (pour ne pas révéler la bonne réponse par position).
+// _dialogueTouchDetach stocke les fns de cleanup des listeners touch.
+let _dialogueChoiceIdx = 0;
+let _dialogueOrder = [];
+let _dialogueTouchDetach = null;
 
 function openDialogue() {
   const q = (game.scene.quests || []).find(x => x.id === game.currentQuestId);
   if (!q) return;
 
-  // 1. Bascule visuellement l'image B → image C (zoom face caméra, sans flou)
-  //    juste avant que la bottom-sheet n'apparaisse.
+  // 1. Bascule visuellement l'image B → image C (zoom face caméra, sans flou).
   swapToImageC(q);
 
-  // 2. Eyebrow + titre dans le h4
-  const titleEl = $('dialogue-title');
+  // 2. Header (eyebrow + titre)
+  const eyebrowEl = $('dialogue-eyebrow');
   if (q.title) {
-    titleEl.innerHTML =
-      `<div class="eyebrow">✦ ${escapeHtml(q.title)} ✦</div>` +
-      `Que dites-vous ?`;
+    eyebrowEl.textContent = `✦ ${q.title} ✦`;
+    eyebrowEl.style.display = '';
   } else {
-    titleEl.textContent = 'Que dites-vous ?';
+    eyebrowEl.style.display = 'none';
   }
+  $('dialogue-title').textContent = 'Que dites-vous ?';
 
-  // 3. Construction du carousel : un choix par "card", scroll-snap horizontal.
-  //    L'ordre est mélangé pour ne pas révéler la bonne réponse par sa position.
-  const order = shuffle(q.dialogue_choices.map((_, i) => i));
-  const carousel = $('dialogue-carousel');
+  // 3. Carousel translateX : on construit un track flex avec une "page"
+  //    par choix mélangé. transform: translateX(-N * 100%) → pagination.
+  _dialogueOrder = shuffle(q.dialogue_choices.map((_, i) => i));
+  _dialogueChoiceIdx = 0;
+  const track = $('dialogue-carousel-track');
   const dots = $('dialogue-dots');
-  carousel.innerHTML = '';
+  track.innerHTML = '';
   dots.innerHTML = '';
-  // Réinitialise les états laissés par un précédent dialogue.
-  carousel.classList.remove('picked');
-  dots.style.display = '';
-  carousel.scrollLeft = 0;
 
-  order.forEach((origIdx, viewIdx) => {
+  _dialogueOrder.forEach((origIdx, viewIdx) => {
     const c = q.dialogue_choices[origIdx];
-    const wrap = document.createElement('div');
-    wrap.className = 'dialogue-carousel-item' + (viewIdx === 0 ? ' is-active' : '');
-    wrap.dataset.view = viewIdx;
+    const page = document.createElement('div');
+    page.className = 'dialogue-carousel-page' + (viewIdx === 0 ? ' is-active' : '');
+    page.dataset.view = viewIdx;
+    page.dataset.orig = origIdx;
     const btn = document.createElement('button');
     btn.className = 'dialogue-choice';
-    btn.dataset.orig = origIdx;
-    btn.textContent = c.text;
-    // Tap = validation du choix actuellement centré. Si on tap une carte
-    // qui n'est pas centrée, on commence par la centrer (UX classique).
+    btn.textContent = `« ${c.text} »`;
+    // Tap sur la page active rien (validation séparée via le bouton
+    // "Valider cette réponse"). Tap sur une page inactive la centre.
     btn.addEventListener('click', () => {
-      const isActive = wrap.classList.contains('is-active');
-      if (isActive) {
-        onDialoguePick(q, origIdx, btn);
-      } else {
-        carousel.scrollTo({
-          left: wrap.offsetLeft - (carousel.clientWidth - wrap.clientWidth) / 2,
-          behavior: 'smooth',
-        });
-      }
+      if (viewIdx !== _dialogueChoiceIdx) setDialogueChoiceIdx(viewIdx);
     });
-    wrap.appendChild(btn);
-    carousel.appendChild(wrap);
+    page.appendChild(btn);
+    track.appendChild(page);
 
-    const dot = document.createElement('span');
+    const dot = document.createElement('button');
     dot.className = 'dialogue-dot' + (viewIdx === 0 ? ' active' : '');
+    dot.dataset.view = viewIdx;
+    dot.addEventListener('click', () => setDialogueChoiceIdx(viewIdx));
     dots.appendChild(dot);
   });
 
-  // 4. Listener scroll : repère la card la plus centrée et synchronise
-  //    is-active + .active sur le bon dot.
-  const onScroll = () => {
-    const items = carousel.querySelectorAll('.dialogue-carousel-item');
-    const dotEls = dots.querySelectorAll('.dialogue-dot');
-    const center = carousel.scrollLeft + carousel.clientWidth / 2;
-    let bestIdx = 0; let bestDist = Infinity;
-    items.forEach((it, i) => {
-      const itCenter = it.offsetLeft + it.clientWidth / 2;
-      const d = Math.abs(itCenter - center);
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
-    });
-    items.forEach((it, i) => it.classList.toggle('is-active', i === bestIdx));
-    dotEls.forEach((d, i) => d.classList.toggle('active', i === bestIdx));
+  // 4. Swipe horizontal (touchstart / touchend) sur le wrap du carousel.
+  const wrap = $('dialogue-carousel-wrap');
+  let touchStartX = null;
+  const onTouchStart = (e) => { touchStartX = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchStartX == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (dx < -40 && _dialogueChoiceIdx < _dialogueOrder.length - 1) {
+      setDialogueChoiceIdx(_dialogueChoiceIdx + 1);
+    } else if (dx > 40 && _dialogueChoiceIdx > 0) {
+      setDialogueChoiceIdx(_dialogueChoiceIdx - 1);
+    }
+    touchStartX = null;
   };
-  carousel.addEventListener('scroll', onScroll, { passive: true });
-  _dialogueCarouselDetach = () => carousel.removeEventListener('scroll', onScroll);
+  wrap.addEventListener('touchstart', onTouchStart, { passive: true });
+  wrap.addEventListener('touchend', onTouchEnd, { passive: true });
+  _dialogueTouchDetach = () => {
+    wrap.removeEventListener('touchstart', onTouchStart);
+    wrap.removeEventListener('touchend', onTouchEnd);
+  };
 
-  // Réinitialise feedback / close (cachés en attente d'un pick)
-  $('dialogue-feedback').classList.remove('shown');
-  $('dialogue-feedback').textContent = '';
+  // 5. Bouton Valider : valide le choix actuellement affiché.
+  const validateBtn = $('dialogue-validate');
+  validateBtn.onclick = () => {
+    const origIdx = _dialogueOrder[_dialogueChoiceIdx];
+    onDialoguePick(q, origIdx);
+  };
+
+  // Position initiale du track + hint texte
+  track.style.transform = 'translateX(0%)';
+  updateDialogueHintText();
+
+  // Reset feedback / close + montre les modules carousel/hint
+  $('dialogue-feedback').classList.remove('shown', 'best');
+  $('dialogue-feedback').innerHTML = '';
   $('dialogue-close').classList.remove('shown');
-  $('dialogue-hint').classList.remove('hidden');
+  $('dialogue-carousel-wrap').classList.remove('hidden');
+  $('dialogue-dots').classList.remove('hidden');
+  $('dialogue-hint-row').classList.remove('hidden');
+  document.querySelector('.dialogue-body').classList.remove('feedback-mode');
   $('dialogue').classList.add('shown');
-
-  // Premier appel pour positionner correctement is-active après layout.
-  requestAnimationFrame(onScroll);
 }
 
-function onDialoguePick(q, origIdx, btn) {
+function setDialogueChoiceIdx(idx) {
+  _dialogueChoiceIdx = idx;
+  $('dialogue-carousel-track').style.transform = `translateX(-${idx * 100}%)`;
+  document.querySelectorAll('.dialogue-carousel-page').forEach((p, i) =>
+    p.classList.toggle('is-active', i === idx));
+  document.querySelectorAll('.dialogue-dot').forEach((d, i) =>
+    d.classList.toggle('active', i === idx));
+  updateDialogueHintText();
+}
+
+function updateDialogueHintText() {
+  const n = _dialogueOrder.length;
+  if (!n) return;
+  $('dialogue-hint-text').textContent = `${_dialogueChoiceIdx + 1} / ${n} · Glissez pour parcourir`;
+}
+
+function onDialoguePick(q, origIdx) {
   const c = q.dialogue_choices[origIdx];
   const isBest = !!c.is_best;
-  // Désactive toutes les cartes ET marque la carte choisie.
-  document.querySelectorAll('.dialogue-choice').forEach(b => b.disabled = true);
-  btn.classList.add('picked', isBest ? 'best' : 'notbest');
-  // Le carousel garde uniquement la card validée visible — les autres et
-  // les dots disparaissent pour laisser place au feedback.
-  document.querySelectorAll('.dialogue-carousel-item').forEach(it => {
-    if (it.contains(btn)) {
-      it.classList.add('is-active');
-    } else {
-      it.style.display = 'none';
-    }
-  });
-  // Bascule le carousel en mode "picked" : pas de scroll, card centrée.
-  $('dialogue-carousel').classList.add('picked');
-  $('dialogue-dots').style.display = 'none';
-  $('dialogue-hint').classList.add('hidden');
-  // Show feedback
+  // Cache le carousel + dots + hint+valider, bascule le body en mode feedback
+  $('dialogue-carousel-wrap').classList.add('hidden');
+  $('dialogue-dots').classList.add('hidden');
+  $('dialogue-hint-row').classList.add('hidden');
+  document.querySelector('.dialogue-body').classList.add('feedback-mode');
+
+  // Feedback card v2 : badge + quote + rule + explication serif italique.
   const fb = $('dialogue-feedback');
+  fb.classList.toggle('best', isBest);
   let text = c.explanation || '';
   if (!text) text = isBest
     ? 'Bon choix — vous établissez une vraie connexion.'
     : 'Pas le meilleur — la cliente reste sur la défensive.';
   fb.innerHTML =
-    `<span class="lead ${isBest ? 'best' : 'alt'}">${isBest ? '★ Meilleur choix' : 'Choix possible'}</span>` +
-    escapeHtml(text);
+    `<span class="lead ${isBest ? 'best' : 'alt'}">` +
+      `${isBest ? '★ Meilleur choix' : 'Choix possible'}` +
+    `</span>` +
+    `<div class="quote">« ${escapeHtml(c.text)} »</div>` +
+    `<div class="rule"></div>` +
+    `<div class="explain">${escapeHtml(text)}</div>`;
   fb.classList.add('shown');
   $('dialogue-close').classList.add('shown');
 }
@@ -768,13 +786,17 @@ $('dialogue-close').addEventListener('click', () => {
   // mark quest as done
   if (game.currentQuestId) game.questsDone.add(game.currentQuestId);
   $('dialogue').classList.remove('shown');
-  // Cleanup carousel state pour le prochain dialogue
-  if (typeof _dialogueCarouselDetach === 'function') {
-    _dialogueCarouselDetach();
-    _dialogueCarouselDetach = null;
+  // Cleanup listeners + reset visibilité des modules pour le prochain dialogue
+  if (typeof _dialogueTouchDetach === 'function') {
+    _dialogueTouchDetach();
+    _dialogueTouchDetach = null;
   }
-  $('dialogue-dots').style.display = '';
-  $('dialogue-hint').classList.remove('hidden');
+  $('dialogue-carousel-wrap').classList.remove('hidden');
+  $('dialogue-dots').classList.remove('hidden');
+  $('dialogue-hint-row').classList.remove('hidden');
+  $('dialogue-feedback').classList.remove('shown', 'best');
+  $('dialogue-close').classList.remove('shown');
+  document.querySelector('.dialogue-body').classList.remove('feedback-mode');
   closeQuest();
   // re-render the map so the just-completed quest is greyed
   renderQuestLayer();

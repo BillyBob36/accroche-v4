@@ -150,10 +150,15 @@ def edit_master_zone(rect: dict, mask_png_path: Path, prompt: str) -> Path:
 
     # 4. Construit le mask GPT à la taille du crop élargi :
     #    - opaque PARTOUT (à préserver)
-    #    - dans la sous-zone du rect user, on copie le mask user
-    #      (alpha=0 dans la zone à éditer, alpha=255 ailleurs dans le rect)
+    #    - dans la sous-zone du rect user, on copie LE mask user tel quel
+    #      (alpha=0 dans la zone à éditer, alpha=255 ailleurs dans le rect).
+    #    ATTENTION : on paste SANS troisième argument, sinon PIL utilise
+    #    user_mask comme mask de paste et ne transfère pas les pixels
+    #    transparents (= la zone à éditer reste opaque dans big_mask et
+    #    GPT préserve donc TOUT, ce qui donne l'impression que la
+    #    génération est sans effet — bug observé en prod).
     big_mask = Image.new("RGBA", (gw, gh), (0, 0, 0, 255))
-    big_mask.paste(user_mask, (rx_in_g, ry_in_g), user_mask)
+    big_mask.paste(user_mask, (rx_in_g, ry_in_g))
 
     # 5. Appel GPT
     with tempfile.TemporaryDirectory() as tmp:

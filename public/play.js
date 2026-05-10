@@ -205,7 +205,7 @@ function showLevelMenu() {
     <div class="eyebrow">✦ École de la maison ✦</div>
     <h2>${escapeHtml(game.scene.name)}</h2>
     <hr class="rule">
-    <p>Bienvenue. Cette formation comporte deux niveaux.</p>
+    <p>Bienvenue dans votre formation interactive.</p>
     <p class="big" style="margin-top:14px;"><strong>Niveau 1 — Observation</strong></p>
     <p style="margin-top:2px;">${nQ} questions disponibles · ${LEVEL1_TIMER_SECONDS}s d'observation · ${LEVEL1_QUESTION_COUNT} tirées au hasard.</p>
     <p class="big" style="margin-top:14px;"><strong>Niveau 2 — Approche commerciale</strong></p>

@@ -894,10 +894,12 @@
     z-index: 14;
     pointer-events: none;
   }
-  /* La poignée fine, toujours visible, accroche l'oeil sans surcharger */
+  /* La poignée fine, toujours visible, accroche l'oeil sans surcharger.
+     Positionnée absolument PAR RAPPORT AU PANNEAU (parent) à top:100% :
+     elle est donc collée au bord bas du panneau et suit son mouvement. */
   #top-rail-handle {
     position: absolute;
-    top: 0; left: 50%;
+    top: 100%; left: 50%;
     transform: translateX(-50%);
     pointer-events: auto;
     background: rgba(20, 20, 22, 0.92);
@@ -920,8 +922,10 @@
   }
   #top-rail.open #top-rail-handle .chev { transform: rotate(180deg); }
 
-  /* Le panneau du rail qui se déploie */
+  /* Le panneau du rail qui se déploie. `position: relative` pour servir
+     d'ancre à la poignée absolute (top:100%). */
   #top-rail-panel {
+    position: relative;
     pointer-events: auto;
     background: rgba(20, 20, 22, 0.96);
     backdrop-filter: blur(14px);
@@ -1233,12 +1237,18 @@
       <button class="btn" id="save-scene">Sauver comme module</button>
       <a class="btn" href="library.html" style="text-decoration:none;display:block;text-align:center;margin-top:6px;">📚 Bibliothèque</a>
     </div>
-  </div>
 
-  <button id="top-rail-handle" aria-label="Ouvrir / fermer le menu">
-    <span>Outils</span>
-    <span class="chev">▾</span>
-  </button>
+    <!-- La poignée « Outils » est ENFANT du panneau pour qu'elle suive
+         son mouvement (translate). Positionnée absolument à top:100% =
+         juste en dessous du bord bas du panneau. Quand le panneau est
+         fermé (translateY(-100%)), le bord bas est à y=0 → la poignée
+         pointe juste au-dessus de la page. Quand le panneau s'ouvre,
+         la poignée descend AVEC lui (même transition). -->
+    <button id="top-rail-handle" aria-label="Ouvrir / fermer le menu">
+      <span>Outils</span>
+      <span class="chev">▾</span>
+    </button>
+  </div>
 </div>
 
 <!-- legacy: pour préserver les listeners app.js qui référencent #settings-btn / #settings-panel -->

@@ -86,9 +86,17 @@ def build_prompt(subject: str) -> str:
         "STRICT EXCLUSIONS: NO facial features detail (no eyes, mouth, nose). NO clothing "
         "texture, NO fabric folds, NO buttons, NO patterns, NO hair strand details. "
         "NO hatching, NO halftone.\n\n"
-        "OUTPUT: the EXACT same photograph with ONLY the magenta tracing line added on "
-        "top. The photographic content underneath the line must remain 100% unchanged "
-        "in color, lighting, framing, position, and scale."
+        "==== PIXEL FIDELITY (CRITICAL) ====\n"
+        "The photograph underneath the line MUST stay BIT-PERFECT identical : do NOT "
+        "redraw, re-render, recompose, recolor, or re-light any pixel of the photo. "
+        "Do NOT crop, scale, shift, or stretch the subject INSIDE the canvas. The "
+        "person's position, size, posture, facial features, clothing, hair, hands, "
+        "shoes, and the background must remain at the EXACT same pixel coordinates "
+        "as the input. ONLY add the magenta ink line on top — like an overlay layer. "
+        "Think of it as a transparent tracing paper laid over the photo, with the "
+        "magenta line drawn on the tracing paper.\n\n"
+        "OUTPUT: the EXACT same photograph (every pixel of the photo unchanged) "
+        "with ONLY the magenta tracing line added on top."
     )
 
 
@@ -229,15 +237,40 @@ def extract_lines_from_overlay(box: dict) -> Path:
             f"(box id={box_id}) — extract_box_input must run first or was wiped"
         )
 
+    # Wipe l'éventuel line.png précédent (sécurité contre les vestiges
+    # d'une régénération partielle).
+    try: line_path.unlink(missing_ok=True)
+    except OSError: pass
+
     raw = np.array(Image.open(raw_path).convert("RGB")).astype(np.int16)
     original_img = Image.open(original_path).convert("RGB")
     if original_img.size != (raw.shape[1], raw.shape[0]):
         original_img = original_img.resize((raw.shape[1], raw.shape[0]), Image.LANCZOS)
     original = np.array(original_img).astype(np.int16)
 
-    diff = raw - original                     # per-channel signed shift
-    score = diff[..., 0] - diff[..., 1] + diff[..., 2]  # shift toward (255,0,255)
-    is_drawn = score > EXTRACT_THRESHOLD
+    # Filtre STRICT à deux critères pour le magenta :
+    # 1. La couleur résultante est PROCHE du magenta pur (R élevé, G faible, B élevé).
+    # 2. Le pixel a effectivement viré au magenta depuis l'original
+    #    (R/B montés, G baissé) — pour ignorer les pixels déjà magenta dans la photo.
+    #
+    # L'ancien filtre ne testait QUE le score signé. Or gpt-image-2 re-render
+    # l'image entière (il ne fait pas un overlay pixel-perfect), donc des
+    # pixels NON-tracés voyaient leur couleur dériver de quelques unités —
+    # ce qui suffisait à passer le seuil et faisait apparaître du bruit
+    # (meubles, vitres, reflets) dans line.png. Avec les deux critères,
+    # seuls les pixels VRAIMENT passés au magenta sont retenus.
+    R, G, B = raw[..., 0], raw[..., 1], raw[..., 2]
+    is_magenta_color = (
+        (R > 180) & (G < 120) & (B > 180)
+        & (R - G > 60) & (B - G > 60)
+    )
+    diff = raw - original
+    is_shifted_to_magenta = (
+        (diff[..., 0] > 30)         # R a monté
+        & (diff[..., 1] < -10)      # G a baissé
+        & (diff[..., 2] > 30)       # B a monté
+    )
+    is_drawn = is_magenta_color & is_shifted_to_magenta
 
     h_full, w_full = is_drawn.shape
     out_full = np.full((h_full, w_full), 255, dtype=np.uint8)

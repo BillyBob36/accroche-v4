@@ -256,7 +256,9 @@ async function loadDebug(boxId, sceneId) {
   const a = info.artifacts;
   const master = info.master;
 
-  // Détection des écarts (alertes utiles)
+  // Détection des écarts (alertes utiles). Note : line.png EST censé être
+  // plus petit que raw.png (c'est la sous-zone du rect user dans le crop GPT
+  // élargi). Donc on ne crie PAS au loup pour ça.
   let warnings = [];
   if (geom && a.input.real_size) {
     const t = geom.target_size;
@@ -268,18 +270,32 @@ async function loadDebug(boxId, sceneId) {
     const r = a.raw.real_size;
     if (t.w !== r.w || t.h !== r.h) warnings.push('raw.png ' + fmtSize(r) + ' ≠ target ' + fmtSize(t) + ' — Azure a normalisé');
   }
-  if (a.raw.real_size && a.line.real_size) {
-    if (a.raw.real_size.w !== a.line.real_size.w || a.raw.real_size.h !== a.line.real_size.h) {
-      warnings.push('line.png ' + fmtSize(a.line.real_size) + ' ≠ raw ' + fmtSize(a.raw.real_size));
+  // Vérification cohérence temporelle : si raw a été régénéré APRÈS line,
+  // alors line est obsolète.
+  if (a.raw.mtime && a.line.mtime && a.raw.mtime > a.line.mtime + 5) {
+    warnings.push('⏰ raw.png plus récent que line.png — re-régénère le dessin');
+  }
+  // Vérif rect_in_gpt cohérent avec line
+  if (geom && geom.rect_in_gpt && a.line.real_size) {
+    const r = geom.rect_in_gpt;
+    if (r.w !== a.line.real_size.w || r.h !== a.line.real_size.h) {
+      warnings.push('line.png ' + fmtSize(a.line.real_size) + ' ≠ rect_in_gpt ' + fmtSize(r) + ' — extract_lines a peut-être planté');
     }
   }
 
-  // Calcul des facteurs sx/sy comme dans skeletonize_lineart
+  // Calcul des facteurs sx/sy comme dans skeletonize_lineart.
+  // sx = (largeur du rect user dans le master) / (largeur de line.png)
+  // sy = idem en hauteur
+  // Si line.png est la sous-zone du rect user, ces facteurs replacent le
+  // skel pile sur le rect user dans le master.
   let sx = null, sy = null;
   if (geom && a.line.real_size) {
     sx = geom.crop_in_master.w / a.line.real_size.w;
     sy = geom.crop_in_master.h / a.line.real_size.h;
   }
+
+  // Mtime affichables
+  const fmtMtime = (m) => m ? new Date(m * 1000).toLocaleString('fr-FR') : '?';
 
   const masterUrl = master.url + '?t=' + Date.now();
   const masterW = master.real_size ? master.real_size.w : 2560;
@@ -336,7 +352,8 @@ async function loadDebug(boxId, sceneId) {
         <div class="meta">
           Réel : <strong>${a.input.real_size ? fmtSize(a.input.real_size) : '?'}</strong>
           · Demandé : <strong>${geom ? fmtSize(geom.target_size) : '?'}</strong><br>
-          C'est l'image envoyée à GPT.
+          C'est l'image envoyée à GPT (crop élargi pour respecter min API).<br>
+          <span style="color:rgba(255,255,255,0.4);">Modifié : ${fmtMtime(a.input.mtime)}</span>
         </div>
         <div class="url">${a.input.url}</div>
       </div>
@@ -346,17 +363,22 @@ async function loadDebug(boxId, sceneId) {
         ${a.raw.exists ? `<img src="${a.raw.url}?t=${Date.now()}">` : '<div class="empty">raw.png absent</div>'}
         <div class="meta">
           Réel : <strong>${a.raw.real_size ? fmtSize(a.raw.real_size) : '?'}</strong><br>
-          Si différent d'input, Azure a normalisé la sortie GPT.
+          Si différent d'input, Azure a normalisé la sortie GPT.<br>
+          <span style="color:rgba(255,255,255,0.4);">Modifié : ${fmtMtime(a.raw.mtime)}</span>
         </div>
         <div class="url">${a.raw.url}</div>
       </div>
 
       <div class="panel">
-        <h2><span class="step">4</span>Diff magenta → line.png</h2>
+        <h2><span class="step">4</span>Diff magenta → line.png (sous-zone rect user)</h2>
         ${a.line.exists ? `<img src="${a.line.url}?t=${Date.now()}">` : '<div class="empty">line.png absent</div>'}
         <div class="meta">
-          Réel : <strong>${a.line.real_size ? fmtSize(a.line.real_size) : '?'}</strong><br>
-          Pixels noirs = magenta tracé par GPT. Décor / meubles → bug du prompt.
+          Réel : <strong>${a.line.real_size ? fmtSize(a.line.real_size) : '?'}</strong>
+          ${geom && geom.rect_in_gpt ? ` · Attendu : <strong>${fmtSize(geom.rect_in_gpt)}</strong>` : ''}<br>
+          Sous-zone extraite de raw.png aux coords du rect user dans le crop GPT.<br>
+          Pixels noirs = magenta tracé par GPT. Si beaucoup de bruit → filtre
+          de couleur trop laxiste.<br>
+          <span style="color:rgba(255,255,255,0.4);">Modifié : ${fmtMtime(a.line.mtime)}</span>
         </div>
         <div class="url">${a.line.url}</div>
       </div>
@@ -366,7 +388,8 @@ async function loadDebug(boxId, sceneId) {
         ${a.skel.exists ? `<object type="image/svg+xml" data="${a.skel.url}?t=${Date.now()}" style="background:white;"></object>` : '<div class="empty">skel.svg absent</div>'}
         <div class="meta">
           Skeleton + RDP simplification.<br>
-          transform = translate(crop.x + dx0×sx, crop.y + dy0×sy) scale(sx, sy)
+          transform = translate(crop.x + dx0×sx, crop.y + dy0×sy) scale(sx, sy)<br>
+          <span style="color:rgba(255,255,255,0.4);">Modifié : ${fmtMtime(a.skel.mtime)}</span>
         </div>
         <div class="url">${a.skel.url}</div>
       </div>

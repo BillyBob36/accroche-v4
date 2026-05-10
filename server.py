@@ -622,11 +622,13 @@ def _debug_box_info(box_id: str, scene_id: str | None = None) -> dict:
     artifacts = {}
     for k, p in paths_for.items():
         size = _png_size(p) if k != "skel" else None
+        st = p.stat() if p.exists() else None
         artifacts[k] = {
             "exists": p.exists(),
             "url": (f"/{public_prefix}/" if public_prefix else "/") + p.relative_to(base if public_prefix else PUBLIC).as_posix(),
             "real_size": {"w": size[0], "h": size[1]} if size else None,
-            "bytes": p.stat().st_size if p.exists() else None,
+            "bytes": st.st_size if st else None,
+            "mtime": st.st_mtime if st else None,
         }
 
     # Master

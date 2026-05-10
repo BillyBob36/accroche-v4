@@ -219,20 +219,29 @@ function endObservation() {
   $('quest-counter').classList.remove('shown');
   const cta = document.getElementById('observation-cta');
   if (cta) cta.style.display = 'none';
-  // Retire les contours et hit-zones du master.
+  // Retire les contours et hit-zones du master + scroll listener.
+  $('stage-wrap').removeEventListener('scroll', updateObservationByScroll);
+  _observationSortedBoxes = [];
+  _observationSkelMap = new Map();
   $('quest-layer').innerHTML = '';
   blurStage(true);
   startQCM();
 }
 
+// État partagé pour la mise en surbrillance par scroll mobile (niveau 1).
+let _observationSortedBoxes = [];
+let _observationSkelMap = new Map();
+
 async function renderObservationLayer() {
   const layer = $('quest-layer');
   layer.innerHTML = '';
   const boxes = game.scene.boxes || [];
-  const skelMap = new Map();
+  _observationSkelMap = new Map();
+  // Tri gauche → droite : indispensable pour l'algorithme « N portions égales ».
+  _observationSortedBoxes = [...boxes].sort((a, b) => (a.x || 0) - (b.x || 0));
 
   for (const box of boxes) {
-    // Skel SVG (contour blanc, comme dans l'éditeur, opaque seulement au hover)
+    // Skel SVG (contour blanc, opaque seulement quand actif)
     try {
       const t = await fetch(`scenes/${sceneId}/lineart-svg/box-${box.id}-skel.svg`).then(r => r.text());
       const doc = new DOMParser().parseFromString(t, 'image/svg+xml');
@@ -249,7 +258,7 @@ async function renderObservationLayer() {
         const imp = g.cloneNode(true);
         imp.setAttribute('class', 'observation-skel');
         layer.appendChild(imp);
-        skelMap.set(String(box.id), imp);
+        _observationSkelMap.set(String(box.id), imp);
       }
     } catch {}
 
@@ -260,11 +269,52 @@ async function renderObservationLayer() {
     rect.setAttribute('y', box.y);
     rect.setAttribute('width', box.w);
     rect.setAttribute('height', box.h);
-    const skel = skelMap.get(String(box.id));
-    rect.addEventListener('mouseenter', () => skel?.classList.add('active'));
-    rect.addEventListener('mouseleave', () => skel?.classList.remove('active'));
+    const skel = _observationSkelMap.get(String(box.id));
+    // Hover desktop : allumage individuel par survol.
+    rect.addEventListener('mouseenter', () => {
+      if (!isMobilePortrait()) skel?.classList.add('active');
+    });
+    rect.addEventListener('mouseleave', () => {
+      if (!isMobilePortrait()) skel?.classList.remove('active');
+    });
     rect.addEventListener('click', () => openObservationZoom(box));
     layer.appendChild(rect);
+  }
+
+  // Mobile portrait : on attache l'écoute du scroll pour activer le contour
+  // de la portion courante. Désactivé en desktop (couvert par le hover).
+  if (isMobilePortrait()) {
+    const wrap = $('stage-wrap');
+    wrap.removeEventListener('scroll', updateObservationByScroll);
+    wrap.addEventListener('scroll', updateObservationByScroll, { passive: true });
+    // Activation initiale (au tout début du scroll → premier cadre).
+    requestAnimationFrame(updateObservationByScroll);
+  }
+}
+
+function isMobilePortrait() {
+  return window.innerHeight > window.innerWidth;
+}
+
+// Divise la plage [0, maxScroll] en N portions égales (N = nb de cadres).
+// La portion où se trouve scrollLeft détermine l'unique cadre allumé.
+// Bien plus prévisible que « centre de l'écran » : chaque cadre a SA zone
+// dédiée, même quand deux personnages sont visuellement proches.
+function updateObservationByScroll() {
+  if (!isMobilePortrait()) return;
+  const sorted = _observationSortedBoxes;
+  if (!sorted.length) return;
+  const wrap = $('stage-wrap');
+  const maxScroll = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+  let idx = 0;
+  if (maxScroll > 0) {
+    const t = wrap.scrollLeft / maxScroll;            // 0 .. 1
+    idx = Math.min(sorted.length - 1, Math.floor(t * sorted.length));
+  }
+  for (let i = 0; i < sorted.length; i++) {
+    const sk = _observationSkelMap.get(String(sorted[i].id));
+    if (!sk) continue;
+    sk.classList.toggle('active', i === idx);
   }
 }
 

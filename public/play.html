@@ -22,6 +22,22 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     height: 100%;
     overflow: hidden;
+    /* Désactive partout l'overlay bleu/gris d'un long-press tactile */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  /* Image master + SVG de contour : pas de highlight tap, pas de menu long-press,
+     pas de sélection de texte/image (qui arrive sur Android avec un long-press). */
+  .stage, .stage img, .stage svg, .stage .quest-layer,
+  .observation-hit, .observation-skel,
+  .quest-hit, .quest-skel {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .stage img {
+    -webkit-user-drag: none;
   }
 
   /* ---- Top bar ---- */

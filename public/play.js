@@ -40,8 +40,11 @@ function shuffle(arr) {
 }
 
 function setScreen(html) {
+  const wasShown = $('screen').classList.contains('shown');
   $('screen-panel').innerHTML = html;
   $('screen').classList.add('shown');
+  // Joue un son de transition seulement quand on PASSE d'un écran à un autre.
+  if (!wasShown) sfx('transition');
 }
 function hideScreen() { $('screen').classList.remove('shown'); }
 
@@ -57,6 +60,7 @@ function blurStage(yes) { document.body.classList.toggle('blurred', yes); }
 const MASTER_W_PLAY = 2560, MASTER_H_PLAY = 1440;
 
 function applyZoomToBox(box) {
+  sfx('zoom_in');
   const stage = $('stage');
   const zi = $('zoom-inner');
   const wrap = $('stage-wrap');
@@ -144,6 +148,34 @@ async function init() {
   // Welcome screen → choose level
   showLevelMenu();
 }
+
+// ============== AUDIO : helper sfx(event) ============================
+// Joue le son associé à l'event via AccrocheSFX (cf. sfx.js). On lit le
+// mapping meta.sounds + le flag meta.sounds_enabled du module en cours.
+// Si AccrocheSFX n'est pas chargé ou si sounds_enabled=false, no-op.
+function sfx(event) {
+  if (!window.AccrocheSFX) return;
+  if (!game.scene) return;
+  if (game.scene.sounds_enabled === false) return;
+  try { window.AccrocheSFX.playSound(event, game.scene.sounds || {}); } catch {}
+}
+
+// Délégation : tout clic sur un bouton or primaire joue le son ui_cta.
+// Selectors couverts : .screen .btn (welcome/brief/score), .talk-btn (Parler),
+// .dialogue-validate (Valider cette réponse), .dialogue-close (Continuer),
+// .qcm-next (Suivant). Pour les boutons secondaires/dots/img-arrow, on
+// joue ui_tap. Le listener est en capture pour précéder les handlers
+// internes (rapide même quand un click déclenche une nav).
+document.addEventListener('click', (e) => {
+  const tgt = e.target.closest(
+    '.screen .btn, .talk-btn, .dialogue-validate, .dialogue-close, .qcm-next'
+  );
+  if (tgt) { sfx('ui_cta'); return; }
+  const tap = e.target.closest(
+    '.dialogue-dot, .img-arrow, .qcm-choice, .dialogue-choice, .topbar a, .topbar button'
+  );
+  if (tap) sfx('ui_tap');
+}, true);
 
 // Synchronisation du style du tracé entre éditeur et player.
 // Appelé au chargement d'un module : pose les vars CSS --stroke-w,
@@ -434,6 +466,7 @@ function showQuestion() {
       });
       btn.classList.add('picked', good ? 'good' : 'bad');
       if (good) game.score++;
+      sfx(good ? 'validate_good' : 'validate_bad');
       const exp = $('qcm-explain');
       exp.textContent = q.explanation || (good ? 'Bonne réponse.' : 'Réponse incorrecte.');
       exp.classList.add('shown');
@@ -449,6 +482,7 @@ function showQuestion() {
 
 function showScore() {
   game.level1Done = true;
+  sfx('score_reveal');
   const total = game.questions.length;
   const pct = total ? Math.round(game.score * 100 / total) : 0;
   let verdict;
@@ -781,6 +815,7 @@ function updateDialogueHintText() {
 function onDialoguePick(q, origIdx) {
   const c = q.dialogue_choices[origIdx];
   const isBest = !!c.is_best;
+  sfx(isBest ? 'validate_good' : 'validate_bad');
   // Cache le carousel + dots + hint+valider, bascule le body en mode feedback
   $('dialogue-carousel-wrap').classList.add('hidden');
   $('dialogue-dots').classList.add('hidden');
@@ -833,6 +868,7 @@ function showLevel2Score() {
   $('quest-counter').classList.remove('shown');
   $('quest-hint')?.classList.remove('shown');
   blurStage(true);
+  sfx('score_reveal');
   setScreen(`
     <div class="eyebrow">✦ Rideau ✦</div>
     <div class="grand-title">Bravo&nbsp;!</div>

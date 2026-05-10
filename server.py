@@ -989,7 +989,7 @@ class Handler(SimpleHTTPRequestHandler):
                 payload = self._read_json()
                 if payload is None: return
                 meta = _scene_meta(sid) or {}
-                for key in ("name", "category", "level1_questions", "quests", "boxes", "trace_style"):
+                for key in ("name", "category", "level1_questions", "quests", "boxes", "trace_style", "sounds", "sounds_enabled"):
                     if key in payload:
                         meta[key] = payload[key]
                 meta["updated_at"] = _now_iso()

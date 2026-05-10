@@ -633,6 +633,88 @@
   }
   .modal-actions .btn { flex: 1; margin-top: 0; }
 
+  /* ---- Modal Sons (event slots + 10 alternatives + preview/select) ---- */
+  .sounds-modal-inner { max-width: 640px; }
+  .sounds-intro {
+    color: rgba(255,255,255,0.55);
+    font-size: 12px; line-height: 1.5;
+    margin: 0 0 12px;
+  }
+  .sounds-master-row {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(212,184,122,0.08);
+    border: 1px solid rgba(212,184,122,0.3);
+    border-radius: 6px;
+    padding: 9px 12px;
+    margin-bottom: 18px;
+    cursor: pointer;
+    font-size: 12px; color: rgba(212,184,122,0.95);
+    letter-spacing: 0.04em;
+  }
+  .sounds-master-row input { accent-color: rgba(212,184,122,0.95); }
+  .sounds-event-block {
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    background: rgba(0,0,0,0.25);
+  }
+  .sounds-event-title {
+    font-size: 13px; color: rgba(212,184,122,0.95);
+    margin: 0 0 2px;
+    letter-spacing: 0.02em;
+    font-weight: 500;
+  }
+  .sounds-event-desc {
+    font-size: 11px; color: rgba(255,255,255,0.5);
+    margin: 0 0 10px;
+    line-height: 1.4;
+  }
+  .sounds-presets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 6px;
+  }
+  .sounds-preset-chip {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-size: 11px; color: rgba(255,255,255,0.85);
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer;
+    transition: background 150ms, border-color 150ms;
+    text-align: left;
+  }
+  .sounds-preset-chip:hover {
+    background: rgba(212,184,122,0.06);
+    border-color: rgba(212,184,122,0.3);
+  }
+  .sounds-preset-chip.selected {
+    background: rgba(212,184,122,0.14);
+    border-color: rgba(212,184,122,0.7);
+    color: rgba(212,184,122,0.95);
+  }
+  .sounds-preset-chip .play {
+    width: 18px; height: 18px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.10);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+  .sounds-preset-chip.selected .play {
+    background: rgba(212,184,122,0.3);
+    color: rgba(212,184,122,0.95);
+  }
+  .sounds-preset-chip .label {
+    flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.mode-mobile .sounds-presets-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   /* Sous-onglets du modal Missions */
   .missions-tabs {
     display: flex; gap: 4px;
@@ -1088,6 +1170,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
         <span>Missions</span>
       </button>
+      <button class="tool-btn" data-tool="sounds" title="Sons">
+        <!-- picto: haut-parleur -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M16 8c1.4 1.1 2.2 2.6 2.2 4S17.4 14.9 16 16"/></svg>
+        <span>Sons</span>
+      </button>
       <button class="tool-btn" data-tool="characters" title="Personnages (édition par masque)">
         <!-- picto: humain -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="3.5"/><path d="M5 21c0-4 3.5-7 7-7s7 3 7 7"/></svg>
@@ -1335,6 +1422,27 @@
 <button id="ql-close" style="display:none;" aria-hidden="true"></button>
 <button id="quests-list-close" style="display:none;" aria-hidden="true"></button>
 
+<!-- ----- Modal Sons : pour chaque événement du jeu, 10 alternatives ----- -->
+<div id="sounds-modal" class="modal-overlay">
+  <div class="modal sounds-modal-inner">
+    <h3>Sons du module</h3>
+    <p class="sounds-intro">
+      Pour chaque événement, choisis une ambiance sonore parmi les 10 alternatives.
+      Tape « ▶ » sur une vignette pour la pré-écouter, puis sur l'icône or pour la sélectionner.
+    </p>
+    <!-- Switch master mute -->
+    <label class="sounds-master-row">
+      <input type="checkbox" id="sounds-enabled" checked>
+      <span>Sons activés dans ce module</span>
+    </label>
+    <!-- Liste d'événements remplie par app.js / sfx.js -->
+    <div id="sounds-events-list"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn primary" id="sounds-close" style="flex:1;">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- ----- Modal: edit quest ----- -->
 <div id="quest-modal" class="modal-overlay">
   <div class="modal">
@@ -1385,6 +1493,7 @@
 
 <div id="status">chargement…</div>
 
+<script src="sfx.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1603,7 +1603,7 @@ $('quests-list-close').addEventListener('click', () => {
 //     modale de gestion, et FERMENT le rail.
 const TOOL_PANELS  = new Set(['trace', 'source', 'module']);
 const TOOL_MODES   = new Set(['frames', 'characters']);
-const TOOL_MODALS  = new Set(['missions']);
+const TOOL_MODALS  = new Set(['missions', 'sounds']);
 
 function showToolPane(name) {
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
@@ -1634,6 +1634,13 @@ async function selectTool(name) {
       }
       await loadCurrentSceneMeta();
       openMissionsModal('n1');
+    } else if (name === 'sounds') {
+      if (!sceneState.id) {
+        alert('Sauve d\'abord la scène comme module pour pouvoir choisir ses sons.');
+        return;
+      }
+      await loadCurrentSceneMeta();
+      openSoundsModal();
     }
     return;
   }
@@ -2152,3 +2159,81 @@ $('char-generate').addEventListener('click', async () => {
   refreshSceneBanner();
   updateMobileMode();
 })();
+
+// =================== SONS (modal Sons) =================================
+// 7 événements de jeu × 10 alternatives synthesizers = 70 presets.
+// L'auteur choisit un preset par événement ; la sélection est stockée
+// dans meta.sounds = { ui_tap: 'tap_velours', ui_cta: 'cta_chime_or', ... }.
+// Au jouage, play.js charge meta.sounds et appelle AccrocheSFX.playSound().
+//
+// La modal Sons est rendue dynamiquement (vs Missions qui est statique
+// dans index.html) parce que les listes de presets dépendent de sfx.js.
+
+function openSoundsModal() {
+  if (!window.AccrocheSFX) {
+    alert('Moteur audio non chargé.'); return;
+  }
+  const currentSounds = sceneState.meta?.sounds || {};
+  const enabled = sceneState.meta?.sounds_enabled !== false; // default true
+  $('sounds-enabled').checked = enabled;
+  renderSoundsList(currentSounds);
+  $('sounds-modal').classList.add('shown');
+}
+function closeSoundsModal() {
+  $('sounds-modal').classList.remove('shown');
+}
+$('sounds-close').addEventListener('click', closeSoundsModal);
+$('sounds-enabled').addEventListener('change', async () => {
+  await saveSceneMeta({ sounds_enabled: $('sounds-enabled').checked });
+});
+
+function renderSoundsList(currentSounds) {
+  const root = $('sounds-events-list');
+  root.innerHTML = '';
+  const { SOUND_EVENTS, PRESETS, previewPreset } = window.AccrocheSFX;
+  SOUND_EVENTS.forEach(ev => {
+    const block = document.createElement('div');
+    block.className = 'sounds-event-block';
+    const presets = PRESETS[ev.key] || [];
+    const selectedId = currentSounds[ev.key] || ev.defaultPreset;
+    const chipsHtml = presets.map(p => `
+      <button class="sounds-preset-chip ${p.id === selectedId ? 'selected' : ''}"
+              data-event="${ev.key}" data-preset="${p.id}">
+        <span class="play" aria-hidden="true">▶</span>
+        <span class="label">${escapeHtmlAttr(p.label)}</span>
+      </button>
+    `).join('');
+    block.innerHTML = `
+      <div class="sounds-event-title">${escapeHtmlAttr(ev.label)}</div>
+      <div class="sounds-event-desc">${escapeHtmlAttr(ev.desc)}</div>
+      <div class="sounds-presets-grid">${chipsHtml}</div>
+    `;
+    root.appendChild(block);
+  });
+  // Wire les chips : un clic = preview + sélection.
+  root.querySelectorAll('.sounds-preset-chip').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      const eventKey = chip.dataset.event;
+      const presetId = chip.dataset.preset;
+      // 1. Preview (toujours, même si le son est désactivé au jeu)
+      previewPreset(eventKey, presetId);
+      // 2. Marque visuel : déselectionne les frères, sélectionne ce chip
+      chip.parentElement.querySelectorAll('.sounds-preset-chip').forEach(c =>
+        c.classList.remove('selected'));
+      chip.classList.add('selected');
+      // 3. Sauve dans meta.sounds (debounced via saveSceneMeta)
+      const prev = sceneState.meta?.sounds || {};
+      const next = { ...prev, [eventKey]: presetId };
+      await saveSceneMeta({ sounds: next });
+    });
+  });
+}
+
+// Sécurité : on échappe l'HTML pour éviter une injection si un label
+// contient des caractères spéciaux (présentement ils sont sûrs, mais on
+// se ménage la possibilité de personnaliser plus tard).
+function escapeHtmlAttr(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Debug pipeline lineart · Accroche</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #0a0a0a;
+    --bg-card: rgba(20, 20, 22, 0.96);
+    --fg: #e5e5e5;
+    --dim: rgba(255,255,255,0.55);
+    --line: rgba(255,255,255,0.1);
+    --accent: rgba(212, 184, 122, 0.95);
+    --info: rgba(140, 200, 255, 0.95);
+    --good: rgba(80, 227, 164, 0.9);
+    --bad: rgba(255, 110, 110, 0.95);
+  }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    min-height: 100vh;
+    font-size: 13px; line-height: 1.5;
+  }
+  header {
+    position: sticky; top: 0;
+    background: rgba(8,8,10,0.92); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 18px;
+    z-index: 10;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-family: system-ui;
+    font-weight: 400; font-size: 18px;
+    color: var(--accent);
+  }
+  .selectors {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+  select, button, a.btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    font: inherit; font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  select:hover, button:hover { background: rgba(255,255,255,0.12); }
+
+  main { padding: 20px 18px 60px; max-width: 1400px; margin: 0 auto; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+  .panel {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow: hidden;
+  }
+  .panel h2 {
+    font-family: system-ui;
+    font-size: 13px; font-weight: 500;
+    margin: 0 0 10px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.7);
+  }
+  .panel h2 .step {
+    display: inline-block; min-width: 22px;
+    background: var(--accent); color: #0a0a0a;
+    font-weight: 600;
+    padding: 1px 6px; border-radius: 4px;
+    margin-right: 8px;
+    text-align: center;
+  }
+  .panel .url {
+    font-size: 10px; color: var(--dim);
+    word-break: break-all;
+    margin-top: 4px;
+  }
+  .panel .meta {
+    font-size: 11px; color: var(--info);
+    margin: 4px 0 8px;
+    line-height: 1.6;
+  }
+  .panel .meta strong { color: var(--good); }
+  .panel .meta .warn { color: var(--bad); font-weight: bold; }
+  .panel img,
+  .panel object,
+  .panel svg {
+    width: 100%; height: auto;
+    background: #050505;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    display: block;
+  }
+  .panel.wide { grid-column: 1 / -1; }
+
+  /* Composite : master avec overlay */
+  .composite {
+    position: relative;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #050505;
+  }
+  .composite img.master {
+    display: block; width: 100%;
+  }
+  .composite svg.overlay,
+  .composite object.overlay {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    background: transparent;
+    border: 0;
+  }
+  .composite .legend {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(8,8,10,0.85);
+    padding: 6px 10px; border-radius: 4px;
+    font-size: 11px;
+    z-index: 2;
+  }
+  .legend .swatch {
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: 2px; vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  pre {
+    margin: 0;
+    background: rgba(0,0,0,0.4);
+    padding: 8px; border-radius: 4px;
+    font-size: 11px; line-height: 1.4;
+    overflow-x: auto;
+    color: rgba(255,255,255,0.78);
+  }
+  details { margin-top: 8px; }
+  details summary { cursor: pointer; color: var(--dim); font-size: 11px; }
+
+  .empty {
+    color: var(--dim); font-style: italic;
+    padding: 20px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Debug pipeline lineart — toutes les étapes</h1>
+  <div class="selectors">
+    <label>Scène
+      <select id="scene-select">
+        <option value="">— scène en cours (public/) —</option>
+      </select>
+    </label>
+    <label>Cadre
+      <select id="box-select">
+        <option value="">— choisir un cadre —</option>
+      </select>
+    </label>
+    <button id="reload">↻ Recharger</button>
+    <a class="btn" href="/index.html">← Éditeur</a>
+    <a class="btn" href="/library.html">Bibliothèque</a>
+  </div>
+</header>
+
+<main>
+  <div id="root"><div class="empty">Sélectionne une scène et un cadre pour voir toutes les étapes du pipeline.</div></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function loadScenes() {
+  try {
+    const r = await fetch('/api/scenes', { cache: 'no-store' });
+    const j = await r.json();
+    const sel = $('scene-select');
+    sel.innerHTML = '<option value="">— scène en cours (public/) —</option>';
+    for (const s of j.scenes || []) {
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name + ' (' + s.box_count + ' cadres)';
+      sel.appendChild(o);
+    }
+  } catch (e) { console.warn(e); }
+}
+
+async function loadBoxes(sceneId) {
+  let boxes = [];
+  if (sceneId) {
+    try {
+      const r = await fetch('/api/scenes/' + encodeURIComponent(sceneId), { cache: 'no-store' });
+      const m = await r.json();
+      boxes = m.boxes || [];
+    } catch {}
+  } else {
+    try {
+      const r = await fetch('/api/boxes', { cache: 'no-store' });
+      const j = await r.json();
+      boxes = j.boxes || [];
+    } catch {}
+  }
+  const sel = $('box-select');
+  sel.innerHTML = '<option value="">— choisir un cadre —</option>';
+  for (const b of boxes) {
+    const o = document.createElement('option');
+    o.value = String(b.id);
+    const subj = b.subject ? ' — ' + b.subject.trim().slice(0, 40) : '';
+    o.textContent = 'Cadre ' + b.id + ' (' + Math.round(b.w) + '×' + Math.round(b.h) + ')' + subj;
+    sel.appendChild(o);
+  }
+}
+
+function fmtRect(r) {
+  if (!r) return '?';
+  return Math.round(r.x) + ',' + Math.round(r.y) + ' · ' + Math.round(r.w) + '×' + Math.round(r.h);
+}
+function fmtSize(s) {
+  if (!s) return '?';
+  return s.w + '×' + s.h;
+}
+function ratio(s) {
+  if (!s || !s.h) return '?';
+  return (s.w / s.h).toFixed(3);
+}
+
+async function loadDebug(boxId, sceneId) {
+  const root = $('root');
+  if (!boxId) { root.innerHTML = '<div class="empty">Choisis un cadre.</div>'; return; }
+  root.innerHTML = '<div class="empty">Chargement…</div>';
+
+  let info;
+  try {
+    const url = '/api/debug/box/' + encodeURIComponent(boxId) + (sceneId ? '?scene=' + encodeURIComponent(sceneId) : '');
+    info = await fetch(url, { cache: 'no-store' }).then(r => r.json());
+  } catch (e) {
+    root.innerHTML = '<div class="empty">Erreur réseau : ' + e.message + '</div>';
+    return;
+  }
+
+  const box = info.box;
+  const geom = info.geom;
+  const a = info.artifacts;
+  const master = info.master;
+
+  // Détection des écarts (alertes utiles)
+  let warnings = [];
+  if (geom && a.input.real_size) {
+    const t = geom.target_size;
+    const i = a.input.real_size;
+    if (t.w !== i.w || t.h !== i.h) warnings.push('input.png ' + fmtSize(i) + ' ≠ target ' + fmtSize(t));
+  }
+  if (geom && a.raw.real_size) {
+    const t = geom.target_size;
+    const r = a.raw.real_size;
+    if (t.w !== r.w || t.h !== r.h) warnings.push('raw.png ' + fmtSize(r) + ' ≠ target ' + fmtSize(t) + ' — Azure a normalisé');
+  }
+  if (a.raw.real_size && a.line.real_size) {
+    if (a.raw.real_size.w !== a.line.real_size.w || a.raw.real_size.h !== a.line.real_size.h) {
+      warnings.push('line.png ' + fmtSize(a.line.real_size) + ' ≠ raw ' + fmtSize(a.raw.real_size));
+    }
+  }
+
+  // Calcul des facteurs sx/sy comme dans skeletonize_lineart
+  let sx = null, sy = null;
+  if (geom && a.line.real_size) {
+    sx = geom.crop_in_master.w / a.line.real_size.w;
+    sy = geom.crop_in_master.h / a.line.real_size.h;
+  }
+
+  const masterUrl = master.url + '?t=' + Date.now();
+  const masterW = master.real_size ? master.real_size.w : 2560;
+  const masterH = master.real_size ? master.real_size.h : 1440;
+
+  // Composite 1 : master avec rect user en rouge
+  const composite1 = box ? `
+    <div class="composite">
+      <img class="master" src="${masterUrl}">
+      <svg class="overlay" viewBox="0 0 ${masterW} ${masterH}" preserveAspectRatio="xMidYMid meet">
+        <rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"
+              fill="rgba(255, 80, 80, 0.18)" stroke="rgb(255, 80, 80)" stroke-width="3"
+              vector-effect="non-scaling-stroke"/>
+        <text x="${box.x + 12}" y="${box.y + 36}" fill="white" stroke="black" stroke-width="0.5"
+              font-family="system-ui" font-size="36" font-weight="500">Cadre ${box.id}</text>
+      </svg>
+      <div class="legend"><span class="swatch" style="background:rgb(255,80,80)"></span>Rect user dans le master</div>
+    </div>` : '<div class="empty">Box introuvable</div>';
+
+  // Composite 2 : master avec SVG skel superposé
+  const composite2 = (box && a.skel.exists) ? `
+    <div class="composite">
+      <img class="master" src="${masterUrl}">
+      <object class="overlay" type="image/svg+xml" data="${a.skel.url}?t=${Date.now()}"></object>
+      <div class="legend"><span class="swatch" style="background:white"></span>SVG skel — devrait être collé au sujet</div>
+    </div>` : '<div class="empty">Pas de skel SVG disponible</div>';
+
+  root.innerHTML = `
+    <div class="grid">
+      <div class="panel wide">
+        <h2><span class="step">0</span>Métadonnées</h2>
+        <div class="meta">
+          ${box ? `Rect user : <strong>${fmtRect(box)}</strong> · ratio <strong>${(box.w / box.h).toFixed(3)}</strong> · aspect <strong>${box.aspect || '?'}</strong> · sujet : « ${(box.subject || '').slice(0, 80)} »` : '⚠ box absent'}<br>
+          ${geom ? `Geom target_size demandé à GPT : <strong>${fmtSize(geom.target_size)}</strong> · ratio <strong>${ratio(geom.target_size)}</strong>` : '⚠ geom absent'}<br>
+          ${master.real_size ? `Master réel : <strong>${fmtSize(master.real_size)}</strong>` : ''}<br>
+          ${sx !== null ? `Scale appliqué au SVG : sx=<strong>${sx.toFixed(4)}</strong> · sy=<strong>${sy.toFixed(4)}</strong>` : ''}
+          ${warnings.length ? '<br><span class="warn">⚠ ' + warnings.join(' · ') + '</span>' : ''}
+        </div>
+        <details>
+          <summary>JSON brut (geom + artifacts)</summary>
+          <pre>${escapeHtml(JSON.stringify({ box, geom, artifacts: a, master }, null, 2))}</pre>
+        </details>
+      </div>
+
+      <div class="panel">
+        <h2><span class="step">1</span>Master + rect user</h2>
+        ${composite1}
+        <div class="meta">Tracé en rouge : la zone que tu as définie.</div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="step">2</span>Crop master → input.png</h2>
+        ${a.input.exists ? `<img src="${a.input.url}?t=${Date.now()}">` : '<div class="empty">input.png absent</div>'}
+        <div class="meta">
+          Réel : <strong>${a.input.real_size ? fmtSize(a.input.real_size) : '?'}</strong>
+          · Demandé : <strong>${geom ? fmtSize(geom.target_size) : '?'}</strong><br>
+          C'est l'image envoyée à GPT.
+        </div>
+        <div class="url">${a.input.url}</div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="step">3</span>Sortie GPT → raw.png</h2>
+        ${a.raw.exists ? `<img src="${a.raw.url}?t=${Date.now()}">` : '<div class="empty">raw.png absent</div>'}
+        <div class="meta">
+          Réel : <strong>${a.raw.real_size ? fmtSize(a.raw.real_size) : '?'}</strong><br>
+          Si différent d'input, Azure a normalisé la sortie GPT.
+        </div>
+        <div class="url">${a.raw.url}</div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="step">4</span>Diff magenta → line.png</h2>
+        ${a.line.exists ? `<img src="${a.line.url}?t=${Date.now()}">` : '<div class="empty">line.png absent</div>'}
+        <div class="meta">
+          Réel : <strong>${a.line.real_size ? fmtSize(a.line.real_size) : '?'}</strong><br>
+          Pixels noirs = magenta tracé par GPT. Décor / meubles → bug du prompt.
+        </div>
+        <div class="url">${a.line.url}</div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="step">5</span>SVG skel</h2>
+        ${a.skel.exists ? `<object type="image/svg+xml" data="${a.skel.url}?t=${Date.now()}" style="background:white;"></object>` : '<div class="empty">skel.svg absent</div>'}
+        <div class="meta">
+          Skeleton + RDP simplification.<br>
+          transform = translate(crop.x + dx0×sx, crop.y + dy0×sy) scale(sx, sy)
+        </div>
+        <div class="url">${a.skel.url}</div>
+      </div>
+
+      <div class="panel wide">
+        <h2><span class="step">6</span>Master + SVG skel superposé (test d'alignement)</h2>
+        ${composite2}
+        <div class="meta">
+          Si le SVG est ALIGNÉ au sujet : le pipeline fonctionne.<br>
+          Si le SVG est DÉCALÉ : bug dans le calcul scale/translate de skeletonize_lineart.py.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ----- Bindings -----
+$('scene-select').addEventListener('change', () => loadBoxes($('scene-select').value));
+$('box-select').addEventListener('change', () => loadDebug($('box-select').value, $('scene-select').value));
+$('reload').addEventListener('click', () => loadDebug($('box-select').value, $('scene-select').value));
+
+const params = new URLSearchParams(location.search);
+(async () => {
+  await loadScenes();
+  if (params.get('scene')) $('scene-select').value = params.get('scene');
+  await loadBoxes($('scene-select').value);
+  if (params.get('box')) {
+    $('box-select').value = params.get('box');
+    loadDebug(params.get('box'), $('scene-select').value);
+  }
+})();
+</script>
+
+</body>
+</html>

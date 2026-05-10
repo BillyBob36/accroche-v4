@@ -586,6 +586,76 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
 _RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|quest/[^/]+/generate))?$")
 
 
+def _png_size(path: Path) -> tuple[int, int] | None:
+    """Lit la taille d'un PNG/JPG sans charger l'image entière en mémoire."""
+    if not path.exists():
+        return None
+    try:
+        from PIL import Image as _Img
+        with _Img.open(path) as im:
+            return im.size
+    except Exception:
+        return None
+
+
+def _debug_box_info(box_id: str, scene_id: str | None = None) -> dict:
+    """Renvoie tout ce qu'il faut pour comprendre où un tracé se positionne :
+    geom (crop_in_master + target_size), tailles RÉELLES de chaque artefact,
+    URLs des fichiers à afficher dans debug.html."""
+    if scene_id:
+        base = SCENES_DIR / scene_id
+        public_prefix = f"scenes/{scene_id}"
+    else:
+        base = PUBLIC
+        public_prefix = ""
+    crops = base / "crops"
+    lineart_svg = base / "lineart-svg"
+    geom_path = crops / f"box-{box_id}-geom.json"
+    geom = _read_json(geom_path, None)
+
+    paths_for = {
+        "input": crops / f"box-{box_id}-input.png",
+        "raw":   crops / f"box-{box_id}-raw.png",
+        "line":  crops / f"box-{box_id}-line.png",
+        "skel":  lineart_svg / f"box-{box_id}-skel.svg",
+    }
+    artifacts = {}
+    for k, p in paths_for.items():
+        size = _png_size(p) if k != "skel" else None
+        artifacts[k] = {
+            "exists": p.exists(),
+            "url": (f"/{public_prefix}/" if public_prefix else "/") + p.relative_to(base if public_prefix else PUBLIC).as_posix(),
+            "real_size": {"w": size[0], "h": size[1]} if size else None,
+            "bytes": p.stat().st_size if p.exists() else None,
+        }
+
+    # Master
+    master_path = (base / (geom.get("master_filename") if geom and geom.get("master_filename") else "master.jpg"))
+    if not master_path.exists():
+        master_path = base / "master.jpg"
+    master_size = _png_size(master_path)
+
+    # Cherche le box correspondant dans boxes.json (ou meta.json pour scene)
+    if scene_id:
+        meta = _scene_meta(scene_id) or {}
+        boxes = meta.get("boxes", [])
+    else:
+        boxes = _read_json(BOXES_FILE, [])
+    box = next((b for b in boxes if str(b.get("id")) == str(box_id)), None)
+
+    return {
+        "box_id": box_id,
+        "scene_id": scene_id,
+        "box": box,
+        "master": {
+            "url": (f"/{public_prefix}/" if public_prefix else "/") + master_path.name,
+            "real_size": {"w": master_size[0], "h": master_size[1]} if master_size else None,
+        },
+        "geom": geom,
+        "artifacts": artifacts,
+    }
+
+
 def _resnap_scene(scene_id: str) -> dict | None:
     """Replace asset folders + boxes in the saved scene with current public/ state.
     Preserves name, category, level1_questions, quests, created_at."""
@@ -678,6 +748,18 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/api/share/status":
             self._send_json(200, _tunnel_status())
+            return
+        # Debug : agrège pour un cadre toutes les métadonnées du pipeline
+        # lineart (geom + tailles RÉELLES de chaque PNG + chemin de chaque
+        # artefact). Permet à debug.html de tout afficher d'un coup.
+        if path.startswith("/api/debug/box/"):
+            box_id = path[len("/api/debug/box/"):]
+            scene_id = None
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            for kv in qs.split("&"):
+                if kv.startswith("scene="):
+                    scene_id = kv.split("=", 1)[1]
+            self._send_json(200, _debug_box_info(box_id, scene_id))
             return
         if path == "/api/scenes":
             out = []

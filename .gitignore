@@ -32,8 +32,6 @@ public/crops/
 yolo11n-seg.pt
 *.pt
 
-# Fichiers temporaires user
-public/debug.html
 
 # Sorties d'expérimentation locale (les modules sauvegardés sous public/scenes/
 # restent versionnés ; les sorties brutes du pipeline sont éphémères et lourdes,

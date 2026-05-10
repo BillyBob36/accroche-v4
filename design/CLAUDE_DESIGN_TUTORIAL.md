@@ -52,45 +52,86 @@ Si ton compte est sur le plan gratuit, tu peux passer en **Pro** depuis
 C'est l'étape clé pour que Claude comprenne ton code existant et reste
 cohérent avec ton aesthetic actuelle.
 
-1. En haut à droite de Claude Design, clique sur **+ Add context** (ou
-   l'icône trombone selon la version).
-2. Choisis **« Connect a code repository »**.
-3. Si c'est ta première fois : autorise l'app GitHub pour Anthropic
-   (oauth standard, accès en lecture aux repos publics).
-4. Tape `BillyBob36/accroche-v4`, sélectionne le repo.
-5. **IMPORTANT** : restreins la profondeur d'indexation au sous-dossier
-   `public/`.
+Dans la zone de saisie de Claude Design, en bas, clique sur l'**icône
+trombone 📎** (« Add context »). Un menu s'ouvre avec ces options :
 
-   ```
-   Repository: BillyBob36/accroche-v4
-   Branch:     main
-   Subfolder:  public/        ← très important
-   ```
+```
+↑  Upload .fig file                       [How to download]
+ⓘ  Configure GitHub access                [Connect / Disconnect]
+🌐 Grab web element
+📁 Link code folder                       ← C'est cette option
+🛠 Skills and design systems
+↻  Reference another project
+```
 
-   Sans cette restriction, Claude Design indexerait aussi `pipeline/`,
-   `scripts/`, `pipeline/_imagegen/` etc. — ça ralentit le chargement et
-   pollue le contexte avec du Python qu'il ne doit pas redessiner.
+### Étape 3.1 — Authentifier GitHub (une seule fois)
 
-6. Une fois indexé, Claude Design affiche les fichiers détectés. Vérifie
-   que tu vois au moins :
-   - `index.html` (l'éditeur)
-   - `library.html` (la bibliothèque)
-   - `play.html` + `play.js` (le player)
-   - `app.js` (logique éditeur)
+Clique d'abord sur **« Configure GitHub access »** et autorise l'app
+GitHub pour Anthropic (OAuth standard, accès en lecture). Une fois
+autorisé, le menu affiche `Connected as <ton-user-github>`.
+
+> Cette étape sert UNIQUEMENT à l'authentification — elle ne te demande
+> pas encore quel repo. Le repo se choisit à l'étape suivante.
+
+### Étape 3.2 — Lier le dossier de code
+
+Clique sur **« Link code folder »**. Une fenêtre s'ouvre avec :
+
+| Champ | Valeur à entrer |
+|---|---|
+| **Repository** | `BillyBob36/accroche-v4` |
+| **Branch** | `main` |
+| **Folder** (très important) | `public` |
+
+> ⚠️ **Restreins bien au sous-dossier `public/`**. Si tu laisses la
+> racine, Claude Design indexe aussi `pipeline/` (Python pur), `scripts/`
+> (one-off scripts), `pipeline/_imagegen/` (skill Azure) — ça ralentit
+> Claude et pollue son contexte avec du code qui n'a rien à voir avec
+> le visuel.
+
+Valide. Au bout de quelques secondes, Claude Design affiche les fichiers
+indexés. Tu dois voir au moins :
+- `index.html` (l'éditeur)
+- `library.html` (la bibliothèque)
+- `play.html` + `play.js` (le player)
+- `app.js` (logique éditeur)
 
 ---
 
 ## 4. Joindre le DESIGN.md comme référence
 
-Le repo est connecté → le `DESIGN.md` à la racine est déjà accessible.
-Mais pour garantir que Claude Design le **prenne explicitement comme
-source de vérité** :
+⚠️ Petit hic : tu as restreint l'indexation à `public/` pour que Claude
+ne ralentisse pas → mais le `DESIGN.md` est à la **racine** du repo, pas
+dans `public/`. Donc Claude Design ne le voit pas via le « Link code
+folder » fait à l'étape 3.
 
-1. En début de conversation Claude Design, attache-le explicitement :
-   - Bouton **+ Add context → Files in repository**
-   - Sélectionne `DESIGN.md` à la racine (oui, à la racine, pas dans
-     `public/` — il est juste à la racine du repo)
-2. Dis à Claude :
+**Solution** : copie-le manuellement en début de conversation. Deux
+options :
+
+### Option A — Copier-coller le contenu
+
+1. Ouvre `DESIGN.md` dans ton IDE local.
+2. Copie tout le contenu (Ctrl+A, Ctrl+C).
+3. Colle-le comme **premier message** dans Claude Design, précédé de :
+
+   > « Voici les règles de design que tu dois respecter pour tout ce
+   > que tu vas générer. Source de vérité ABSOLUE. »
+
+### Option B — Lien GitHub direct
+
+1. En premier message, écris :
+
+   > « Lis ce fichier : <https://github.com/BillyBob36/accroche-v4/blob/main/DESIGN.md>
+   > et applique-le strictement à toutes les générations. »
+
+2. Claude Design fetche le contenu et l'utilise.
+
+L'option A est plus fiable (Claude a tout en contexte direct, pas de
+risque de fetch raté).
+
+### Instruction explicite à Claude
+
+Ensuite, dis-lui :
 
    > « Toutes les règles de design (couleurs, typographie, spacing,
    > composants, animations, anti-patterns) sont dans le DESIGN.md

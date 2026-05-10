@@ -49,6 +49,79 @@ function setLevelPill(text) { $('level-pill').textContent = text; }
 
 function blurStage(yes) { document.body.classList.toggle('blurred', yes); }
 
+// ============== Zoom cinématique vers un box (split pan + scale) ============
+// Reproduit l'effet de l'éditeur : le stage TRANSLATE (caméra) en 900 ms,
+// pendant que le zoom-inner SCALE en 1500 ms et fade-out à 1000 ms (à ce
+// moment-là l'overlay prend le relais via son fade-in delayed). C'est le
+// même pattern que `applyZoom` dans app.js.
+const MASTER_W_PLAY = 2560, MASTER_H_PLAY = 1440;
+
+function applyZoomToBox(box) {
+  const stage = $('stage');
+  const zi = $('zoom-inner');
+  const wrap = $('stage-wrap');
+
+  // Pendant l'animation, le scroll horizontal du stage-wrap (mode mobile
+  // portrait) doit être verrouillé pour ne pas perturber la caméra.
+  wrap.style.overflow = 'hidden';
+
+  // Lit la position/dimensions actuelles du stage (sans transform).
+  stage.style.transition = 'none';
+  zi.style.transition = 'none';
+  // On force un reflow pour que le clear de transform prenne effet
+  stage.style.transform = '';
+  zi.style.transform = '';
+  void stage.offsetWidth;
+
+  const r = stage.getBoundingClientRect();
+  const stageW = r.width, stageH = r.height;
+  // Coords du centre du box dans le repère stage (px).
+  const bcx = (box.x + box.w / 2) / MASTER_W_PLAY * stageW;
+  const bcy = (box.y + box.h / 2) / MASTER_H_PLAY * stageH;
+  const bw = box.w / MASTER_W_PLAY * stageW;
+  const bh = box.h / MASTER_H_PLAY * stageH;
+
+  // Scale : que le box rentre confortablement dans le viewport (85 % pour
+  // laisser une marge), avec un minimum de 1.4 (sinon ça ne se voit pas).
+  let scale = Math.min(window.innerWidth / Math.max(1, bw),
+                       window.innerHeight / Math.max(1, bh)) * 0.85;
+  if (scale < 1.4) scale = 1.4;
+  if (scale > 6) scale = 6;
+
+  // Pan : amener le centre du box au centre du viewport.
+  const panX = window.innerWidth / 2 - r.left - bcx;
+  const panY = window.innerHeight / 2 - r.top - bcy;
+
+  // Restaure les transitions CSS et applique les transforms.
+  stage.style.transition = '';
+  zi.style.transition = '';
+  // Camera (translate, 900 ms ease-out)
+  stage.style.transform = `translate(${panX}px, ${panY}px)`;
+  // Scale (1500 ms) — origin sur le centre du box pour un zoom propre
+  zi.style.transformOrigin = `${bcx}px ${bcy}px`;
+  zi.style.transform = `scale(${scale})`;
+  document.body.classList.add('zooming-in');
+}
+
+function resetZoomToHome() {
+  const stage = $('stage');
+  const zi = $('zoom-inner');
+  const wrap = $('stage-wrap');
+  document.body.classList.remove('zooming-in');
+  stage.style.transition = '';
+  zi.style.transition = '';
+  // Le master fade-in instantanément (delay 0), pendant que le scale revient
+  // à 1 sur 1500 ms autour du même origin (pour ne pas pop au coin).
+  stage.style.transform = '';
+  zi.style.transform = '';
+  setTimeout(() => {
+    if (!document.body.classList.contains('zooming-in')) {
+      zi.style.transformOrigin = '';
+      wrap.style.overflow = '';
+    }
+  }, 1600);
+}
+
 // ---------- bootstrap ----------
 async function init() {
   if (!sceneId) {
@@ -197,32 +270,34 @@ async function renderObservationLayer() {
 
 // Ouvre l'image B en plein écran SANS possibilité d'aller à l'image C.
 // Un clic sur l'overlay ferme et ramène au master (pas de cycle B → C).
+// Le zoom progressif (split pan + scale) reproduit l'effet de l'éditeur :
+// la caméra arrive en 900 ms sur le perso, le scale finit en 1500 ms, et
+// l'image B prend le relais via fade-in delayed à 1000 ms.
 function openObservationZoom(box) {
+  // 1. Préparer l'image B dans l'overlay (mais overlay encore invisible)
   const overlay = $('quest-overlay');
   const img = $('quest-img');
   $('quest-caption').style.display = 'none';
   $('quest-actions').innerHTML = '';   // pas de bouton "Parler"
-  img.classList.add('fade-out');
-  setTimeout(() => {
-    // Source principale = imageB du cadre, fallback sur ancien chemin pour rétrocompat
-    const primary = `scenes/${sceneId}/exp3/imageB/box-${box.id}.jpg`;
-    img.src = primary;
-    img.onload = () => img.classList.remove('fade-out');
-    img.onerror = () => img.classList.remove('fade-out');
-  }, 180);
+  img.classList.remove('fade-out');
+  img.src = `scenes/${sceneId}/exp3/imageB/box-${box.id}.jpg`;
+
+  // 2. Lance le zoom cinématique sur le master
+  applyZoomToBox(box);
+
+  // 3. L'overlay devient .shown : son fade-in CSS est delayed 1000 ms, donc
+  //    il apparaît pile quand le master finit son zoom + commence à fade-out.
   overlay.classList.add('shown');
-  // Un clic n'importe où sur l'overlay le ferme (et pas de bascule B↔C).
-  overlay.onclick = (e) => {
-    // Ignore les clics sur l'image elle-même pour éviter les fermetures accidentelles
-    // au moment du chargement ; sinon ferme.
+
+  // 4. Un clic ferme : retour au master + reset zoom
+  const close = () => {
     overlay.onclick = null;
+    img.onclick = null;
     overlay.classList.remove('shown');
+    resetZoomToHome();
   };
-  // L'image est aussi cliquable
-  img.onclick = () => {
-    overlay.onclick = null;
-    overlay.classList.remove('shown');
-  };
+  overlay.onclick = close;
+  img.onclick = close;
 }
 
 function startQCM() {
@@ -385,13 +460,19 @@ async function renderQuestLayer() {
 function openQuest(q) {
   game.currentQuestId = q.id;
   game.currentQuestImage = 1;
+  // Trouve le box lié à la quête pour appliquer le zoom cinématique sur le master.
+  const box = (game.scene.boxes || []).find(b => String(b.id) === String(q.box_id));
+  if (box) applyZoomToBox(box);
   showQuestImage();
+  // L'overlay fade-in delayed 1000 ms (sync avec fin du zoom).
   $('quest-overlay').classList.add('shown');
 }
 
 function closeQuest() {
   $('quest-overlay').classList.remove('shown');
   game.currentQuestId = null;
+  // Retour au master avec reset cinématique du zoom.
+  resetZoomToHome();
 }
 
 function showQuestImage() {

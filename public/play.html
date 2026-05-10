@@ -85,6 +85,31 @@
     pointer-events: auto;
   }
 
+  /* Couche transformable interne au stage : c'est elle qui scale et fade,
+     pendant que le stage parent translate (pan caméra). */
+  .zoom-inner {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    transform-origin: 0 0;
+    transition: opacity 500ms ease 0ms,
+                transform 1500ms cubic-bezier(0.6, 0, 0.3, 1);
+    will-change: opacity, transform;
+  }
+  .zoom-inner > img,
+  .zoom-inner > svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+  /* Quand on entre en zoom : le master s'efface 500ms après le démarrage, pour
+     laisser apparaître l'overlay (image B / image1) qui prend le relais.
+     Quand on revient (zooming-out), le master fade-in instantanément (delay 0). */
+  body.zooming-in .zoom-inner {
+    opacity: 0;
+    transition: opacity 500ms ease 1000ms,
+                transform 1500ms cubic-bezier(0.6, 0, 0.3, 1);
+  }
+
   body.blurred .stage { filter: blur(14px) brightness(0.35); }
   body.blurred .stage .quest-layer { pointer-events: none; }
 
@@ -234,17 +259,30 @@
   }
   .qcm-next.shown { display: inline-block; }
 
-  /* ---- Quest interaction ---- */
+  /* ---- Quest interaction (et observation niveau 1) ----
+     L'overlay reste TOUJOURS dans le DOM ; on contrôle sa visibilité via
+     opacity + visibility pour pouvoir synchroniser un fade-in DELAYED
+     (sync avec la fin du zoom du master) et un fade-out RAPIDE au retour. */
   .quest-overlay {
     position: fixed; inset: 0;
     background: rgba(5,5,8,0.96);
     z-index: 40;
-    display: none;
+    display: flex;
     flex-direction: column;
     align-items: center; justify-content: center;
     padding: 16px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 350ms ease 0ms, visibility 0ms linear 350ms;
   }
-  .quest-overlay.shown { display: flex; }
+  .quest-overlay.shown {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    /* Fade-in delayed pour qu'il apparaisse pile quand le zoom du master finit */
+    transition: opacity 500ms ease 1000ms, visibility 0ms linear 0ms;
+  }
   .quest-img-wrap {
     position: relative;
     flex: 1;
@@ -381,11 +419,16 @@
   <div class="level-pill" id="level-pill">Préparation</div>
 </div>
 
-<!-- master stage (used in both levels) -->
+<!-- master stage (used in both levels). Le `zoom-inner` permet de splitter
+     les transformations entre `stage` (translate / pan, 900 ms) et `zoom-inner`
+     (scale + opacity, 1500 ms) pour un effet de caméra cinématique
+     identique à celui de l'éditeur. -->
 <div class="stage-wrap" id="stage-wrap">
   <div class="stage" id="stage">
-    <img id="master" src="" alt="">
-    <svg class="quest-layer" id="quest-layer" viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="zoom-inner" id="zoom-inner">
+      <img id="master" src="" alt="">
+      <svg class="quest-layer" id="quest-layer" viewBox="0 0 2560 1440" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
   </div>
 </div>
 

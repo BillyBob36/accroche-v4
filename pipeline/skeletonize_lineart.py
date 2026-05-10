@@ -120,12 +120,20 @@ def skeletonize_one(box_id: str) -> Path:
         (ROOT / f"public/crops/box-{box_id}-geom.json").read_text(encoding="utf-8")
     )
     crop = geom["crop_in_master"]
-    target = geom["target_size"]
 
     line_path = ROOT / f"public/crops/box-{box_id}-line.png"
     line = Image.open(line_path).convert("L")
     arr = np.array(line)
     is_line = arr < 200
+
+    # IMPORTANT — facteurs d'échelle calculés à partir de la TAILLE RÉELLE de
+    # line.png, et NON pas de `geom.target_size` (qui est la taille DEMANDÉE
+    # à GPT). L'API peut normaliser l'output à une taille différente
+    # (ex. 1024x1024) ; dans ce cas extract_lines_from_overlay resize l'input
+    # pour matcher l'output, et line.png se retrouve aussi à cette taille.
+    # Si on utilisait geom.target_size ici, on appliquerait un facteur faux
+    # et le SVG du contour atterrirait à côté du personnage dans le master.
+    line_h, line_w = arr.shape
 
     ys, xs = np.where(is_line)
     if len(xs) == 0:
@@ -145,10 +153,20 @@ def skeletonize_one(box_id: str) -> Path:
         f'    <path d="{_polyline_to_svg_d(pts)}"/>' for pts in simplified
     )
 
-    sx = crop["w"] / target["w"]
-    sy = crop["h"] / target["h"]
+    sx = crop["w"] / line_w
+    sy = crop["h"] / line_h
     master_x = crop["x"] + dx0 * sx
     master_y = crop["y"] + dy0 * sy
+
+    # Avertissement utile en log si la taille reçue diffère de celle demandée
+    expected = geom.get("target_size") or {}
+    if expected and (expected.get("w") != line_w or expected.get("h") != line_h):
+        print(
+            f"  ! skel box-{box_id}: GPT returned {line_w}x{line_h}, "
+            f"expected {expected.get('w')}x{expected.get('h')} "
+            f"— using actual size for scale, no offset.",
+            flush=True,
+        )
 
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {MASTER_W} {MASTER_H}" '

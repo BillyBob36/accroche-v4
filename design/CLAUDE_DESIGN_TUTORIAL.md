@@ -47,54 +47,80 @@ Si ton compte est sur le plan gratuit, tu peux passer en **Pro** depuis
 
 ---
 
-## 3. Connecter le repo Git
+## 3. Attacher le code (depuis ton dossier local)
 
-C'est l'étape clé pour que Claude comprenne ton code existant et reste
-cohérent avec ton aesthetic actuelle.
+Important à comprendre : **Claude Design n'attache PAS le repo via une URL
+GitHub**. Il attache un **dossier local** que tu lui glisses-déposes (ou
+que tu choisis via un picker de dossier). C'est plus simple en pratique :
+pas besoin que le repo soit public, pas de OAuth complexe.
 
-Dans la zone de saisie de Claude Design, en bas, clique sur l'**icône
-trombone 📎** (« Add context »). Un menu s'ouvre avec ces options :
+L'option « Configure GitHub access » dans le menu trombone sert à autre
+chose (probablement pour permettre à Claude de PUSH ses générations vers
+ton repo, ou pour future intégration). Pour notre cas (feed Claude avec
+ton code existant), elle n'est PAS nécessaire.
 
+### Étape 3.1 — Avoir le repo localement
+
+Si tu n'as pas le repo en local :
+
+```bash
+cd ~/CascadeProjects
+git clone https://github.com/BillyBob36/accroche-v4.git
 ```
-↑  Upload .fig file                       [How to download]
-ⓘ  Configure GitHub access                [Connect / Disconnect]
-🌐 Grab web element
-📁 Link code folder                       ← C'est cette option
-🛠 Skills and design systems
-↻  Reference another project
-```
 
-### Étape 3.1 — Authentifier GitHub (une seule fois)
+Si tu travailles déjà dessus (cas le plus probable), le dossier est
+déjà à : `C:\Users\lamid\CascadeProjects\Accroche 2.0\` (chemin Windows
+que tu utilises).
 
-Clique d'abord sur **« Configure GitHub access »** et autorise l'app
-GitHub pour Anthropic (OAuth standard, accès en lecture). Une fois
-autorisé, le menu affiche `Connected as <ton-user-github>`.
+### Étape 3.2 — Attacher le sous-dossier `public/`
 
-> Cette étape sert UNIQUEMENT à l'authentification — elle ne te demande
-> pas encore quel repo. Le repo se choisit à l'étape suivante.
+Dans la zone de saisie de Claude Design, clique sur l'**icône trombone 📎**
+puis sur **« Link code folder »**.
 
-### Étape 3.2 — Lier le dossier de code
+Une boîte de dialogue **« Attach codebase »** s'ouvre, avec :
+- Une zone pointillée « Drop your codebase here »
+- Un bouton « or browse… »
+- Un bouton « Attach » (grisé tant qu'aucun dossier sélectionné)
 
-Clique sur **« Link code folder »**. Une fenêtre s'ouvre avec :
+Deux options pour attacher :
 
-| Champ | Valeur à entrer |
-|---|---|
-| **Repository** | `BillyBob36/accroche-v4` |
-| **Branch** | `main` |
-| **Folder** (très important) | `public` |
+#### Option A — Drag & drop
 
-> ⚠️ **Restreins bien au sous-dossier `public/`**. Si tu laisses la
-> racine, Claude Design indexe aussi `pipeline/` (Python pur), `scripts/`
-> (one-off scripts), `pipeline/_imagegen/` (skill Azure) — ça ralentit
-> Claude et pollue son contexte avec du code qui n'a rien à voir avec
-> le visuel.
+1. Ouvre l'explorateur Windows.
+2. Navigue jusqu'à `C:\Users\lamid\CascadeProjects\Accroche 2.0\`.
+3. **Glisse-dépose le dossier `public` uniquement** (pas la racine du projet)
+   dans la zone pointillée.
+4. Clique sur **Attach**.
 
-Valide. Au bout de quelques secondes, Claude Design affiche les fichiers
-indexés. Tu dois voir au moins :
+#### Option B — Browse
+
+1. Clique sur **« or browse… »**.
+2. Une fenêtre Windows s'ouvre.
+3. Navigue jusqu'à `C:\Users\lamid\CascadeProjects\Accroche 2.0\`.
+4. Sélectionne le dossier `public` (un seul clic, sans entrer dedans).
+5. Clique sur **« Sélectionner ce dossier »**.
+6. Clique sur **Attach**.
+
+> ⚠️ **N'attache que `public/`**, JAMAIS la racine du projet. Sinon
+> Claude Design indexe aussi `pipeline/` (Python), `scripts/`,
+> `pipeline/_imagegen/` (skill Azure), `node_modules/` éventuels —
+> ça ralentit Claude et pollue son contexte avec du code qui n'a
+> rien à voir avec le visuel à redessiner.
+
+Une fois attaché, Claude Design liste les fichiers détectés. Tu dois
+voir :
 - `index.html` (l'éditeur)
 - `library.html` (la bibliothèque)
 - `play.html` + `play.js` (le player)
 - `app.js` (logique éditeur)
+- `debug.html` (page de debug)
+- `master.jpg` + dossier `scenes/` (les modules sauvegardés)
+
+### Re-attacher après modifs locales
+
+Le drop = un **snapshot figé** au moment du drop. Si tu modifies tes
+fichiers localement après, **il faut détacher puis ré-attacher** pour
+que Claude Design voie la nouvelle version. Reflex à prendre.
 
 ---
 

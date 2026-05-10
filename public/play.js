@@ -488,7 +488,7 @@ function startLevel2() {
     <hr class="rule">
     <p>Vous êtes vendeur·se dans cette boutique. Identifiez les opportunités et engagez la conversation avec les clients.</p>
     <p class="big" style="margin-top:14px;">Complétez les <strong>${total} mini-quête${total > 1 ? 's' : ''}</strong> en cliquant sur les groupes mis en valeur.</p>
-    <p style="margin-top:14px;color:var(--faint);font-family:var(--sans);font-style:normal;font-size:9px;letter-spacing:2.4px;text-transform:uppercase;">Progression · 0 / ${total}</p>
+    <p style="margin-top:14px;color:var(--faint);font-family:var(--sans);font-style:normal;font-size:11px;letter-spacing:2.4px;text-transform:uppercase;">Progression · 0 / ${total}</p>
     <button class="btn" id="go-quests">Commencer</button>
   `);
   $('go-quests').addEventListener('click', enterQuestMap);
@@ -585,62 +585,73 @@ function closeQuest() {
 function showQuestImage() {
   const q = (game.scene.quests || []).find(x => x.id === game.currentQuestId);
   if (!q) return;
-  const idx = game.currentQuestImage;
   const img = $('quest-img');
   const cap = $('quest-caption');
   const actions = $('quest-actions');
-  // Source d'image: les images B/C du cadre lié sont la SOURCE PRINCIPALE
-  // (image 1 = imageB perso+bokeh, image 2 = imageC face caméra). On garde un
-  // fallback sur l'ancien dossier quests/<qid>/imageN.jpg pour les modules
-  // sauvegardés AVANT cette refonte.
+  // L'image active est TOUJOURS image B (perso + bokeh + intro) ;
+  // c'est seulement quand on tape "Parler" qu'on bascule sur image C
+  // (zoom face caméra) qui sert de fond à la modale dialogue.
   const boxId = q.box_id;
-  const primary = idx === 1
-    ? `scenes/${sceneId}/exp3/imageB/box-${boxId}.jpg`
-    : `scenes/${sceneId}/exp3/imageC/box-${boxId}.jpg`;
-  const fallback = `scenes/${sceneId}/quests/${q.id}/image${idx}.jpg`;
-  // Fade swap
+  const primary = `scenes/${sceneId}/exp3/imageB/box-${boxId}.jpg`;
+  const fallback = `scenes/${sceneId}/quests/${q.id}/image1.jpg`;
   img.classList.add('fade-out');
   setTimeout(() => {
     img.src = primary;
     img.onload = () => img.classList.remove('fade-out');
     img.onerror = () => {
-      // Fallback : essaye l'ancien chemin (rétrocompat des modules pré-refonte)
       img.onerror = () => img.classList.remove('fade-out');
       img.src = fallback;
       img.onload = () => img.classList.remove('fade-out');
     };
   }, 180);
 
-  if (idx === 1) {
-    cap.style.display = q.intro_text ? 'block' : 'none';
-    cap.textContent = q.intro_text || '';
-    actions.innerHTML = `
-      <span class="badge">1 / 2</span>
-      <button class="img-arrow" id="next-img" title="Image suivante">→</button>
-      <button class="talk-btn" id="talk-btn">Parler</button>
-    `;
-    $('next-img').addEventListener('click', () => { game.currentQuestImage = 2; showQuestImage(); });
-    $('talk-btn').addEventListener('click', openDialogue);
-    img.onclick = () => { game.currentQuestImage = 2; showQuestImage(); };
-  } else {
-    cap.style.display = 'none';
-    actions.innerHTML = `
-      <button class="img-arrow" id="prev-img" title="Image précédente">←</button>
-      <span class="badge">2 / 2</span>
-      <button class="talk-btn" id="talk-btn">Parler</button>
-    `;
-    $('prev-img').addEventListener('click', () => { game.currentQuestImage = 1; showQuestImage(); });
-    $('talk-btn').addEventListener('click', openDialogue);
-    img.onclick = openDialogue;
-  }
+  // Caption + un seul bouton "Parler" (plus de flèche, plus de badge 1/2 :
+  // l'image C devient le fond de la modale dialogue, pas un état séparé).
+  cap.style.display = q.intro_text ? 'block' : 'none';
+  cap.textContent = q.intro_text || '';
+  actions.innerHTML = `<button class="talk-btn" id="talk-btn">Parler</button>`;
+  $('talk-btn').addEventListener('click', openDialogue);
+  img.onclick = openDialogue;
 }
+
+// Bascule l'image plein écran de l'overlay vers image C (zoom face caméra,
+// sans flou). Utilisé au moment d'ouvrir la modale dialogue : l'image C
+// devient le fond visible derrière la bottom-sheet velours.
+function swapToImageC(q) {
+  const img = $('quest-img');
+  const cap = $('quest-caption');
+  const actions = $('quest-actions');
+  const boxId = q.box_id;
+  const primary = `scenes/${sceneId}/exp3/imageC/box-${boxId}.jpg`;
+  const fallback = `scenes/${sceneId}/quests/${q.id}/image2.jpg`;
+  cap.style.display = 'none';
+  actions.innerHTML = '';  // plus de bouton "Parler" pendant le dialogue
+  img.classList.add('fade-out');
+  setTimeout(() => {
+    img.src = primary;
+    img.onload = () => img.classList.remove('fade-out');
+    img.onerror = () => {
+      img.onerror = () => img.classList.remove('fade-out');
+      img.src = fallback;
+      img.onload = () => img.classList.remove('fade-out');
+    };
+  }, 180);
+  img.onclick = null;  // on ne re-déclenche plus rien sur le tap image
+}
+
+// État local du carousel (mis à jour par le scroll). On stocke la fonction
+// detach pour pouvoir nettoyer le listener quand le dialogue se ferme.
+let _dialogueCarouselDetach = null;
 
 function openDialogue() {
   const q = (game.scene.quests || []).find(x => x.id === game.currentQuestId);
   if (!q) return;
-  // Titre serif italique centré, précédé d'un eyebrow or "✦ TITRE QUÊTE ✦" si dispo.
-  // L'eyebrow est injecté dans le markup du h4 — pas besoin d'élément séparé,
-  // on remplace simplement le contenu avec un sous-élément stylé.
+
+  // 1. Bascule visuellement l'image B → image C (zoom face caméra, sans flou)
+  //    juste avant que la bottom-sheet n'apparaisse.
+  swapToImageC(q);
+
+  // 2. Eyebrow + titre dans le h4
   const titleEl = $('dialogue-title');
   if (q.title) {
     titleEl.innerHTML =
@@ -649,30 +660,97 @@ function openDialogue() {
   } else {
     titleEl.textContent = 'Que dites-vous ?';
   }
-  // Shuffle dialogue choices but track which one was the best
+
+  // 3. Construction du carousel : un choix par "card", scroll-snap horizontal.
+  //    L'ordre est mélangé pour ne pas révéler la bonne réponse par sa position.
   const order = shuffle(q.dialogue_choices.map((_, i) => i));
-  const box = $('dialogue-choices');
-  box.innerHTML = '';
-  order.forEach(origIdx => {
+  const carousel = $('dialogue-carousel');
+  const dots = $('dialogue-dots');
+  carousel.innerHTML = '';
+  dots.innerHTML = '';
+  // Réinitialise les états laissés par un précédent dialogue.
+  carousel.classList.remove('picked');
+  dots.style.display = '';
+  carousel.scrollLeft = 0;
+
+  order.forEach((origIdx, viewIdx) => {
     const c = q.dialogue_choices[origIdx];
+    const wrap = document.createElement('div');
+    wrap.className = 'dialogue-carousel-item' + (viewIdx === 0 ? ' is-active' : '');
+    wrap.dataset.view = viewIdx;
     const btn = document.createElement('button');
     btn.className = 'dialogue-choice';
     btn.dataset.orig = origIdx;
     btn.textContent = c.text;
-    btn.addEventListener('click', () => onDialoguePick(q, origIdx, btn));
-    box.appendChild(btn);
+    // Tap = validation du choix actuellement centré. Si on tap une carte
+    // qui n'est pas centrée, on commence par la centrer (UX classique).
+    btn.addEventListener('click', () => {
+      const isActive = wrap.classList.contains('is-active');
+      if (isActive) {
+        onDialoguePick(q, origIdx, btn);
+      } else {
+        carousel.scrollTo({
+          left: wrap.offsetLeft - (carousel.clientWidth - wrap.clientWidth) / 2,
+          behavior: 'smooth',
+        });
+      }
+    });
+    wrap.appendChild(btn);
+    carousel.appendChild(wrap);
+
+    const dot = document.createElement('span');
+    dot.className = 'dialogue-dot' + (viewIdx === 0 ? ' active' : '');
+    dots.appendChild(dot);
   });
+
+  // 4. Listener scroll : repère la card la plus centrée et synchronise
+  //    is-active + .active sur le bon dot.
+  const onScroll = () => {
+    const items = carousel.querySelectorAll('.dialogue-carousel-item');
+    const dotEls = dots.querySelectorAll('.dialogue-dot');
+    const center = carousel.scrollLeft + carousel.clientWidth / 2;
+    let bestIdx = 0; let bestDist = Infinity;
+    items.forEach((it, i) => {
+      const itCenter = it.offsetLeft + it.clientWidth / 2;
+      const d = Math.abs(itCenter - center);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    });
+    items.forEach((it, i) => it.classList.toggle('is-active', i === bestIdx));
+    dotEls.forEach((d, i) => d.classList.toggle('active', i === bestIdx));
+  };
+  carousel.addEventListener('scroll', onScroll, { passive: true });
+  _dialogueCarouselDetach = () => carousel.removeEventListener('scroll', onScroll);
+
+  // Réinitialise feedback / close (cachés en attente d'un pick)
   $('dialogue-feedback').classList.remove('shown');
   $('dialogue-feedback').textContent = '';
   $('dialogue-close').classList.remove('shown');
+  $('dialogue-hint').classList.remove('hidden');
   $('dialogue').classList.add('shown');
+
+  // Premier appel pour positionner correctement is-active après layout.
+  requestAnimationFrame(onScroll);
 }
 
 function onDialoguePick(q, origIdx, btn) {
   const c = q.dialogue_choices[origIdx];
   const isBest = !!c.is_best;
+  // Désactive toutes les cartes ET marque la carte choisie.
   document.querySelectorAll('.dialogue-choice').forEach(b => b.disabled = true);
   btn.classList.add('picked', isBest ? 'best' : 'notbest');
+  // Le carousel garde uniquement la card validée visible — les autres et
+  // les dots disparaissent pour laisser place au feedback.
+  document.querySelectorAll('.dialogue-carousel-item').forEach(it => {
+    if (it.contains(btn)) {
+      it.classList.add('is-active');
+    } else {
+      it.style.display = 'none';
+    }
+  });
+  // Bascule le carousel en mode "picked" : pas de scroll, card centrée.
+  $('dialogue-carousel').classList.add('picked');
+  $('dialogue-dots').style.display = 'none';
+  $('dialogue-hint').classList.add('hidden');
   // Show feedback
   const fb = $('dialogue-feedback');
   let text = c.explanation || '';
@@ -690,6 +768,13 @@ $('dialogue-close').addEventListener('click', () => {
   // mark quest as done
   if (game.currentQuestId) game.questsDone.add(game.currentQuestId);
   $('dialogue').classList.remove('shown');
+  // Cleanup carousel state pour le prochain dialogue
+  if (typeof _dialogueCarouselDetach === 'function') {
+    _dialogueCarouselDetach();
+    _dialogueCarouselDetach = null;
+  }
+  $('dialogue-dots').style.display = '';
+  $('dialogue-hint').classList.remove('hidden');
   closeQuest();
   // re-render the map so the just-completed quest is greyed
   renderQuestLayer();

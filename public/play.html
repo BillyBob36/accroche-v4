@@ -98,8 +98,8 @@
   }
   .topbar a, .topbar button {
     background: rgba(229,196,141,0.06); border: 1px solid var(--line);
-    color: var(--fg); padding: 6px 12px; border-radius: 6px;
-    font-family: var(--sans); font-size: 11px; font-weight: 500;
+    color: var(--fg); padding: 7px 13px; border-radius: 6px;
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
     letter-spacing: 0.04em; text-decoration: none; cursor: pointer;
     transition: background 200ms, border-color 200ms;
   }
@@ -108,7 +108,7 @@
   }
   .topbar .scene-name {
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 14px; color: var(--accent); letter-spacing: 0.01em;
+    font-size: 16px; color: var(--accent); letter-spacing: 0.01em;
     flex: 1; text-align: center;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     min-width: 0;
@@ -116,9 +116,9 @@
   .topbar .level-pill {
     background: var(--accent-soft); border: 1px solid var(--accent-line);
     color: var(--accent);
-    padding: 5px 12px; border-radius: 999px;
+    padding: 5px 13px; border-radius: 999px;
     font-family: var(--sans); font-weight: 500;
-    font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase;
+    font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
     white-space: nowrap; flex-shrink: 0;
   }
   .topbar a, .topbar button { white-space: nowrap; flex-shrink: 0; }
@@ -267,7 +267,7 @@
   /* Eyebrow champagne en très petit, lettres espacées (✦ ACTE I ✦) */
   .eyebrow {
     font-family: var(--sans); font-weight: 500;
-    font-size: 9px; letter-spacing: 3.5px; text-transform: uppercase;
+    font-size: 11px; letter-spacing: 3.5px; text-transform: uppercase;
     color: var(--accent); margin-bottom: 14px;
   }
   /* Filet or dégradé qui sépare titre et corps */
@@ -287,18 +287,18 @@
   .screen p {
     color: var(--dim);
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 15px; line-height: 1.55; margin: 10px 0;
+    font-size: 17px; line-height: 1.55; margin: 10px 0;
   }
-  .screen .big { color: var(--fg); font-size: 16px; }
+  .screen .big { color: var(--fg); font-size: 18px; }
   /* Bouton primaire or — texte oxblood, filet inset blanc, ombre or chaude */
   .screen .btn {
     margin-top: 14px;
-    height: 48px; padding: 0 28px;
+    height: 50px; padding: 0 30px;
     display: inline-flex; align-items: center; justify-content: center;
     background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
     border: none; color: var(--oxblood);
     border-radius: 4px;
-    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
     letter-spacing: 2.6px; text-transform: uppercase;
     text-decoration: none;
     box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
@@ -309,7 +309,7 @@
   .screen .btn:active { transform: translateY(0); filter: brightness(0.96); }
   .screen .btn:disabled { filter: grayscale(0.4) brightness(0.7); cursor: not-allowed; }
   .screen .btn.secondary {
-    height: 44px;
+    height: 46px;
     background: rgba(255,255,255,.04);
     border: 1px solid var(--line);
     color: var(--fg);
@@ -346,22 +346,22 @@
   }
   .qcm-progress {
     font-family: var(--sans); font-weight: 500;
-    font-size: 9px; color: var(--faint);
+    font-size: 11px; color: var(--faint);
     letter-spacing: 2.4px; text-transform: uppercase;
     margin-bottom: 12px;
   }
   .qcm-card h3 {
     font-family: var(--serif); font-style: italic; font-weight: 300;
-    font-size: 19px; line-height: 1.35; letter-spacing: -0.2px;
+    font-size: 22px; line-height: 1.35; letter-spacing: -0.2px;
     color: var(--fg); margin: 0 0 4px;
   }
-  .qcm-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .qcm-choices { display: flex; flex-direction: column; gap: 9px; margin-top: 20px; }
   .qcm-choice {
     background: rgba(0,0,0,.18);
     border: 1px solid var(--line);
-    border-radius: 6px; padding: 12px 14px;
+    border-radius: 6px; padding: 13px 15px;
     color: var(--fg);
-    font-family: var(--sans); font-size: 13px; line-height: 1.4;
+    font-family: var(--sans); font-size: 15px; line-height: 1.4;
     cursor: pointer; text-align: left;
     transition: background 150ms, border-color 150ms, color 150ms;
   }
@@ -386,25 +386,25 @@
   .qcm-choice:disabled { cursor: default; }
   /* Encart or italique pour l'explication — même esprit qu'une note de programme */
   .qcm-explain {
-    margin-top: 18px; padding: 14px 16px;
+    margin-top: 18px; padding: 15px 17px;
     background: var(--accent-veil);
     border-left: 3px solid var(--accent);
     border-radius: 4px;
     color: var(--fg);
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 14px; line-height: 1.6;
+    font-size: 16px; line-height: 1.6;
     text-align: left;
     display: none;
   }
   .qcm-explain.shown { display: block; }
   .qcm-next {
     margin-top: 18px;
-    height: 42px; padding: 0 24px;
+    height: 44px; padding: 0 26px;
     background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
     border: none; color: var(--oxblood);
     border-radius: 4px;
     font-family: var(--sans); font-weight: 600;
-    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    font-size: 13px; letter-spacing: 2.6px; text-transform: uppercase;
     box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
     cursor: pointer;
     transition: filter 200ms, transform 200ms;
@@ -457,22 +457,22 @@
     background: rgba(8,5,6,0.78); backdrop-filter: blur(8px);
     border: 1px solid var(--line);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: 14px 18px;
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 14px; line-height: 1.55;
+    font-size: 16px; line-height: 1.55;
     color: var(--fg);
     max-width: 720px; margin: 0 auto;
     pointer-events: none;
   }
   .quest-actions {
-    margin-top: 12px;
+    margin-top: 14px;
     display: flex; gap: 10px; align-items: center;
   }
   .quest-actions .badge {
     font-family: var(--sans); font-weight: 500;
-    font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase;
+    font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
     color: var(--accent);
-    padding: 6px 12px; border-radius: 999px;
+    padding: 7px 13px; border-radius: 999px;
     background: var(--accent-soft); border: 1px solid var(--accent-line);
   }
 
@@ -480,9 +480,9 @@
   .talk-btn {
     background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
     border: none; color: var(--oxblood);
-    padding: 11px 26px; border-radius: 999px;
+    padding: 13px 30px; border-radius: 999px;
     font-family: var(--sans); font-weight: 600;
-    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    font-size: 13px; letter-spacing: 2.6px; text-transform: uppercase;
     box-shadow: 0 0 20px rgba(229,196,141,.30), 0 1px 0 rgba(255,255,255,.30) inset;
     cursor: pointer;
     transition: filter 200ms, transform 200ms;
@@ -494,8 +494,8 @@
     background: rgba(229,196,141,.06);
     border: 1px solid var(--line);
     color: var(--fg);
-    width: 38px; height: 38px; border-radius: 50%;
-    cursor: pointer; font-size: 16px; line-height: 1;
+    width: 42px; height: 42px; border-radius: 50%;
+    cursor: pointer; font-size: 18px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     transition: background 200ms, border-color 200ms;
   }
@@ -503,74 +503,146 @@
     background: rgba(229,196,141,.12); border-color: var(--accent-line); color: var(--accent);
   }
 
-  /* ---- Dialogue modal (bottom-sheet velours) ---- */
+  /* ---- Dialogue modal (bottom-sheet velours posé sur image C nette) ---- */
+  /* L'image C reste visible derrière (pas de blur, pas de voile sombre) ;
+     juste un dégradé bas pour assurer la lisibilité du texte au-dessus. */
   .dialogue {
     position: fixed; inset: 0;
-    background: rgba(5,3,4,0.5);
-    backdrop-filter: blur(6px);
+    background: linear-gradient(180deg,
+      rgba(5,3,4,0) 0%,
+      rgba(5,3,4,0) 40%,
+      rgba(5,3,4,0.55) 75%,
+      rgba(5,3,4,0.85) 100%);
     z-index: 50;
     display: none;
     align-items: flex-end; justify-content: center;
-    padding: 20px;
+    padding: 16px 0 16px;
+    pointer-events: auto;
   }
   .dialogue.shown { display: flex; }
   .dialogue-card {
-    width: 100%; max-width: 560px;
-    background: linear-gradient(180deg, var(--oxblood) 0%, var(--velvet) 100%);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--accent-line);
-    border-radius: 8px;
-    padding: 26px 22px;
+    width: 100%; max-width: 600px;
+    background: linear-gradient(180deg, rgba(31,13,16,0.96) 0%, rgba(42,16,20,0.97) 100%);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--accent-line);
+    border-radius: 12px 12px 0 0;
+    padding: 22px 0 18px;
     color: var(--fg);
-    box-shadow: 0 -20px 60px rgba(0,0,0,.6),
+    box-shadow: 0 -20px 60px rgba(0,0,0,.55),
                 0 -1px 0 rgba(229,196,141,.18) inset;
+    overflow: hidden;
   }
   /* Eyebrow or au-dessus du titre — injecté par play.js avec la classe .eyebrow */
   .dialogue-card .eyebrow {
     text-align: center;
-    margin-bottom: 8px;
+    margin: 0 22px 8px;
   }
   .dialogue-card h4 {
-    margin: 0 0 14px;
+    margin: 0 22px 16px;
     font-family: var(--serif); font-style: italic; font-weight: 300;
-    font-size: 17px; line-height: 1.35; letter-spacing: -0.2px;
+    font-size: 19px; line-height: 1.35; letter-spacing: -0.2px;
     color: var(--fg);
     text-align: center;
   }
+  /* Carousel swipeable : un choix à la fois, scroll-snap horizontal.
+     Le padding latéral autorise l'item central d'être visible avec un peu
+     de "peek" sur les voisins, signalant la nature swipeable. */
+  .dialogue-carousel {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    gap: 12px;
+    padding: 4px 12% 6px;
+    scrollbar-width: none;
+  }
+  .dialogue-carousel::-webkit-scrollbar { display: none; }
+  .dialogue-carousel-item {
+    flex: 0 0 76%;
+    scroll-snap-align: center;
+    display: flex;
+  }
+  /* Une fois validé : on enlève la scroll-zone, on centre la card unique
+     restante via justify-content. Le scroll-snap est désactivé. */
+  .dialogue-carousel.picked {
+    justify-content: center;
+    overflow-x: hidden;
+    scroll-snap-type: none;
+    padding-left: 22px; padding-right: 22px;
+  }
+  .dialogue-carousel.picked .dialogue-carousel-item { flex: 0 1 auto; }
   .dialogue-choice {
     width: 100%;
-    background: rgba(0,0,0,.18);
+    background: rgba(0,0,0,.28);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 12px 14px;
+    border-radius: 8px;
+    padding: 18px 18px;
+    min-height: 116px;
     color: var(--fg);
-    font-family: var(--sans); font-size: 13px; line-height: 1.4;
+    font-family: var(--sans); font-size: 15px; font-weight: 400;
+    line-height: 1.45;
     text-align: left; cursor: pointer;
-    margin-bottom: 8px;
-    transition: background 150ms, border-color 150ms, color 150ms;
+    transition: background 200ms, border-color 200ms, color 200ms, transform 200ms;
+    display: flex; align-items: center;
+  }
+  /* La carte "centrée" prend l'or, signalant qu'un tap valide ce choix */
+  .dialogue-carousel-item.is-active .dialogue-choice {
+    background: rgba(229,196,141,.10);
+    border-color: var(--accent-line);
+    color: var(--fg);
+    box-shadow: 0 0 22px rgba(229,196,141,.15);
+  }
+  .dialogue-carousel-item:not(.is-active) .dialogue-choice {
+    opacity: 0.55;
+    transform: scale(0.96);
   }
   .dialogue-choice:hover:not(:disabled) {
     background: rgba(229,196,141,.06);
     border-color: var(--accent-line);
   }
   .dialogue-choice.picked.best {
-    background: rgba(120,210,160,.12);
+    background: rgba(120,210,160,.14);
     border-color: var(--good); color: var(--good);
   }
   .dialogue-choice.picked.notbest {
-    background: rgba(255,255,255,.03);
+    background: rgba(255,255,255,.04);
     border-color: var(--line); color: var(--faint);
   }
+  /* Dots de pagination — celui de la carte centrée est élargi (pill or) */
+  .dialogue-dots {
+    display: flex; gap: 8px; justify-content: center;
+    margin: 14px 22px 4px;
+  }
+  .dialogue-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(229,196,141,.25);
+    transition: background 200ms, width 200ms;
+  }
+  .dialogue-dot.active {
+    background: var(--accent-solid);
+    width: 22px; border-radius: 999px;
+  }
+  /* Hint discret pour signaler le swipe */
+  .dialogue-hint {
+    margin: 4px 22px 0;
+    text-align: center;
+    color: var(--faint);
+    font-family: var(--sans); font-style: normal; font-weight: 500;
+    font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
+  }
+  .dialogue-hint.hidden { display: none; }
   /* Feedback : encart or italique, comme une note de programme */
   .dialogue-feedback {
-    margin-top: 16px;
-    padding: 14px 16px;
+    margin: 16px 22px 0;
+    padding: 15px 17px;
     background: var(--accent-veil);
     border-left: 3px solid var(--accent);
     border-radius: 4px;
     font-family: var(--serif); font-style: italic; font-weight: 400;
-    font-size: 14px; line-height: 1.6;
+    font-size: 16px; line-height: 1.6;
     color: var(--fg);
+    text-align: left;
     display: none;
   }
   .dialogue-feedback.shown { display: block; }
@@ -578,19 +650,19 @@
   .dialogue-feedback .lead {
     display: block;
     font-family: var(--sans); font-style: normal; font-weight: 600;
-    font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+    font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase;
     margin-bottom: 6px;
   }
   .dialogue-feedback .lead.best { color: var(--good); }
   .dialogue-feedback .lead.alt  { color: var(--accent); }
   .dialogue-close {
-    margin-top: 14px;
-    height: 42px; padding: 0 24px;
+    margin: 14px 22px 0;
+    height: 44px; padding: 0 26px;
     background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
     border: none; color: var(--oxblood);
     border-radius: 4px;
     font-family: var(--sans); font-weight: 600;
-    font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+    font-size: 13px; letter-spacing: 2.6px; text-transform: uppercase;
     box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 6px 16px rgba(229,196,141,.18);
     cursor: pointer;
     transition: filter 200ms, transform 200ms;
@@ -606,9 +678,9 @@
     background: rgba(8,5,6,0.8); backdrop-filter: blur(6px);
     border: 1px solid var(--accent-line);
     color: var(--accent);
-    padding: 7px 14px; border-radius: 999px;
+    padding: 8px 16px; border-radius: 999px;
     font-family: var(--sans); font-weight: 500;
-    font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+    font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
     z-index: 25;
     display: none;
   }
@@ -619,11 +691,11 @@
     z-index: 24;
     color: var(--dim);
     font-family: var(--serif); font-style: italic;
-    font-size: 13px; line-height: 1.4;
+    font-size: 15px; line-height: 1.4;
     background: rgba(8,5,6,0.7); backdrop-filter: blur(6px);
     border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 8px 18px;
+    padding: 9px 20px;
     pointer-events: none;
     max-width: 90vw; text-align: center;
     display: none;
@@ -683,11 +755,15 @@
   <div class="quest-actions" id="quest-actions"></div>
 </div>
 
-<!-- Dialogue modal -->
+<!-- Dialogue modal — bottom-sheet velours posé sur l'image C plein écran (qui
+     reste visible derrière, sans flou). Les choix sont un carousel swipeable
+     (scroll-snap) ; tap sur la carte centrée pour valider. -->
 <div class="dialogue" id="dialogue">
   <div class="dialogue-card">
     <h4 id="dialogue-title">Que dites-vous ?</h4>
-    <div id="dialogue-choices"></div>
+    <div class="dialogue-carousel" id="dialogue-carousel"></div>
+    <div class="dialogue-dots" id="dialogue-dots"></div>
+    <p class="dialogue-hint" id="dialogue-hint">Glissez pour explorer · tapez pour valider</p>
     <div class="dialogue-feedback" id="dialogue-feedback"></div>
     <button class="dialogue-close" id="dialogue-close">Continuer</button>
   </div>

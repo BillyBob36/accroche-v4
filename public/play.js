@@ -290,6 +290,8 @@ function runObservationPhase() {
 function endObservation() {
   if (_observationTickHandle) { clearInterval(_observationTickHandle); _observationTickHandle = null; }
   $('quest-counter').classList.remove('shown');
+  // Cache le hint "Glissez pour explorer" s'il était encore affiché.
+  hideObsSwipeHint();
   // Au cas où une ancienne version aurait laissé traîner le CTA dans le DOM,
   // on le retire défensivement.
   const cta = document.getElementById('observation-cta');
@@ -376,7 +378,33 @@ async function renderObservationLayer() {
     wrap.addEventListener('scroll', updateObservationByScroll, { passive: true });
     // Activation initiale (au tout début du scroll → premier cadre).
     requestAnimationFrame(updateObservationByScroll);
+    // Affiche le hint "Glissez pour explorer →" + main animée. Fade-out
+    // dès le premier événement de scroll (l'utilisateur a compris).
+    showObsSwipeHint();
+    const dismissHint = () => {
+      hideObsSwipeHint();
+      wrap.removeEventListener('scroll', dismissHint);
+    };
+    wrap.addEventListener('scroll', dismissHint, { passive: true, once: true });
   }
+}
+
+function showObsSwipeHint() {
+  const hint = $('obs-swipe-hint');
+  if (!hint) return;
+  hint.classList.remove('fading');
+  hint.classList.add('shown');
+  // Safety : fade après 7s même sans scroll, pour ne pas polluer l'écran.
+  clearTimeout(showObsSwipeHint._t);
+  showObsSwipeHint._t = setTimeout(hideObsSwipeHint, 7000);
+}
+function hideObsSwipeHint() {
+  const hint = $('obs-swipe-hint');
+  if (!hint) return;
+  clearTimeout(showObsSwipeHint._t);
+  hint.classList.add('fading');
+  // Retire complètement après la transition opacity (600ms).
+  setTimeout(() => hint.classList.remove('shown', 'fading'), 700);
 }
 
 function isMobilePortrait() {

@@ -824,6 +824,91 @@
     display: none;
   }
   .quest-hint.shown { display: block; }
+
+  /* ---- Hint d'observation : indication "glissez" en bas mobile ---------
+     Pill velours discrète + main SVG qui glisse de gauche à droite en
+     boucle (3s) + texte serif italique champagne. Auto-fade dès qu'on
+     scrolle pour la 1re fois. Affichée seulement sur mobile portrait. */
+  .obs-swipe-hint {
+    position: fixed;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 24;
+    display: none;
+    background: rgba(8,5,6,0.78);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    padding: 10px 18px 10px 14px;
+    box-shadow: 0 0 22px rgba(229,196,141,.20),
+                0 6px 18px rgba(0,0,0,.45);
+    pointer-events: none;
+    transition: opacity 600ms ease, transform 600ms ease;
+    align-items: center;
+    gap: 10px;
+    max-width: 90vw;
+    /* Animation d'apparition initiale : fade-in + léger glisse du bas */
+    animation: obs-hint-in 700ms cubic-bezier(.2,.7,.2,1) both 300ms;
+  }
+  .obs-swipe-hint.shown { display: flex; }
+  .obs-swipe-hint.fading { opacity: 0; transform: translate(-50%, 12px); }
+  @keyframes obs-hint-in {
+    from { opacity: 0; transform: translate(-50%, 18px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+  .obs-swipe-hint .label {
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 14px; color: var(--accent);
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  /* La main : SVG en or qui glisse horizontalement avec un trail de petits
+     points qui s'éteignent derrière. 2.6s par boucle, ease infinite. */
+  .obs-swipe-hint .hand-wrap {
+    position: relative;
+    width: 38px; height: 22px;
+    flex-shrink: 0;
+    overflow: visible;
+  }
+  .obs-swipe-hint .hand {
+    position: absolute;
+    top: 50%; left: 0;
+    transform: translate(-2px, -50%);
+    width: 22px; height: 22px;
+    animation: obs-hand-swipe 2.6s cubic-bezier(.4,0,.4,1) infinite;
+  }
+  /* Trois petits ronds derrière la main qui scintillent en cascade pour
+     suggérer le trail du mouvement. */
+  .obs-swipe-hint .trail {
+    position: absolute;
+    top: 50%;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translateY(-50%);
+    opacity: 0;
+  }
+  .obs-swipe-hint .trail.t1 { left: 0;   animation: obs-trail 2.6s ease-in-out infinite 0ms; }
+  .obs-swipe-hint .trail.t2 { left: 10px; animation: obs-trail 2.6s ease-in-out infinite 130ms; }
+  .obs-swipe-hint .trail.t3 { left: 20px; animation: obs-trail 2.6s ease-in-out infinite 260ms; }
+  @keyframes obs-hand-swipe {
+    0%   { transform: translate(-4px, -50%); opacity: 0; }
+    18%  { opacity: 1; }
+    55%  { transform: translate(20px, -50%); opacity: 1; }
+    80%  { transform: translate(20px, -50%); opacity: 0; }
+    100% { transform: translate(-4px, -50%); opacity: 0; }
+  }
+  @keyframes obs-trail {
+    0%, 25%   { opacity: 0; }
+    35%       { opacity: 0.65; }
+    55%, 100% { opacity: 0; }
+  }
+  /* Affichée uniquement sur mobile portrait (le scroll horizontal n'existe
+     que dans cette configuration ; en desktop la master scene tient en
+     entier dans le viewport). */
+  @media not all and (orientation: portrait) {
+    .obs-swipe-hint { display: none !important; }
+  }
   /* Pourcentage géant or pour le score (niveau 1) */
   .score-pct {
     font-family: var(--serif); font-style: italic; font-weight: 200;
@@ -863,6 +948,28 @@
 
 <div class="quest-counter" id="quest-counter"></div>
 <div class="quest-hint" id="quest-hint"></div>
+
+<!-- Hint d'observation : pill velours en bas avec main SVG qui glisse
+     vers la droite. Affichée uniquement pendant l'observation niveau 1
+     sur mobile portrait, fade-out au premier scroll. -->
+<div class="obs-swipe-hint" id="obs-swipe-hint" aria-hidden="true">
+  <div class="hand-wrap">
+    <span class="trail t1"></span>
+    <span class="trail t2"></span>
+    <span class="trail t3"></span>
+    <!-- Main stylisée : 4 doigts + paume, contour or, glisse vers la droite -->
+    <svg class="hand" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M8 13 V7 C8 5.9 8.9 5 10 5 C11.1 5 12 5.9 12 7 V11
+               M12 11 V6 C12 4.9 12.9 4 14 4 C15.1 4 16 4.9 16 6 V11
+               M16 11 V7 C16 5.9 16.9 5 18 5 C19.1 5 20 5.9 20 7 V14
+               C20 17.3 17.3 20 14 20 H11 C8.8 20 7 18.2 7 16
+               V13.5 C7 12.7 7.7 12 8.5 12 C9.3 12 10 12.7 10 13.5"
+            stroke="rgba(229,196,141,0.95)" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+  </div>
+  <span class="label">Glissez pour explorer&nbsp;→</span>
+</div>
 
 <!-- Brief / observation timer / score / quest brief -->
 <div class="screen" id="screen">

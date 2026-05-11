@@ -30,8 +30,14 @@
 (function (global) {
 
   // ---------- AudioContext singleton ----------
+  // `_audioCtxOverride` permet à `renderReversed()` de rediriger temporairement
+  // tous les nouveaux nodes vers un OfflineAudioContext (rendu hors-ligne)
+  // pour pré-render un preset → reverse → re-play. Tous les builders appellent
+  // ctx() pour obtenir leur contexte, donc cette redirection est transparente.
   let _ctx = null;
+  let _audioCtxOverride = null;
   function ctx() {
+    if (_audioCtxOverride) return _audioCtxOverride;
     if (!_ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -400,9 +406,69 @@
     } catch (e) {}
   }
 
+  // ---------- Reverse playback ----------
+  // Rend un preset hors-ligne dans un OfflineAudioContext (en redirigeant
+  // ctx() via _audioCtxOverride), puis renvoie le buffer rendu.
+  async function _renderPresetToBuffer(preset, maxDur = 2.5) {
+    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline) return null;
+    const sr = 44100;
+    const length = Math.ceil(sr * maxDur);
+    let oac;
+    try { oac = new Offline(1, length, sr); } catch { return null; }
+    // Bascule ctx() vers oac le temps de build+schedule, puis remet.
+    _audioCtxOverride = oac;
+    try {
+      const player = preset.build();
+      player(0.7);
+    } catch (e) {
+      _audioCtxOverride = null;
+      return null;
+    }
+    _audioCtxOverride = null;
+    return await oac.startRendering();
+  }
+
+  // Joue un preset À L'ENVERS. Pipeline :
+  //   1. Render hors-ligne le preset → AudioBuffer
+  //   2. Trim trailing silence (devient leading silence après reverse)
+  //   3. Reverse les samples
+  //   4. Play via BufferSource sur le contexte temps réel
+  async function playReversed(eventKey, presetIdOrMap) {
+    if (_muted) return;
+    let presetId = null;
+    if (typeof presetIdOrMap === 'string') presetId = presetIdOrMap;
+    else if (presetIdOrMap && typeof presetIdOrMap === 'object') presetId = presetIdOrMap[eventKey];
+    const ev = SOUND_EVENTS.find(e => e.key === eventKey);
+    if (!ev) return;
+    if (!presetId) presetId = ev.defaultPreset;
+    const list = PRESETS[eventKey] || [];
+    const preset = list.find(p => p.id === presetId) || list[0];
+    if (!preset) return;
+    const buffer = await _renderPresetToBuffer(preset, 2.5);
+    if (!buffer) return;
+    const data = buffer.getChannelData(0);
+    // Trim trailing silence (seuil bas pour ne pas couper un fade discret).
+    let lastNonZero = data.length - 1;
+    while (lastNonZero > 0 && Math.abs(data[lastNonZero]) < 0.0008) lastNonZero--;
+    const trimmedLen = lastNonZero + 1;
+    if (trimmedLen < 200) return;
+    const realCtx = ctx();
+    if (!realCtx) return;
+    const out = realCtx.createBuffer(1, trimmedLen, buffer.sampleRate);
+    const dst = out.getChannelData(0);
+    for (let i = 0; i < trimmedLen; i++) dst[i] = data[trimmedLen - 1 - i];
+    const src = realCtx.createBufferSource();
+    src.buffer = out;
+    const g = realCtx.createGain();
+    g.gain.value = _master;
+    src.connect(g); g.connect(realCtx.destination);
+    src.start();
+  }
+
   global.AccrocheSFX = {
     PRESETS, SOUND_EVENTS,
-    playSound, previewPreset,
+    playSound, previewPreset, playReversed,
     setMasterVolume, setMuted, isMuted,
   };
 

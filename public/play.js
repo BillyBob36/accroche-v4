@@ -13,6 +13,12 @@ const $ = id => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
 const sceneId = params.get('scene');
+// `from=library` est ajouté UNIQUEMENT par la bibliothèque sur le bouton
+// "Jouer". Sur un lien public (copié via "🔗 Lien public"), ce paramètre
+// est absent → le joueur n'a pas accès au bouton « ← Bibliothèque » ni
+// au bouton « Bibliothèque » de l'écran de fin. Permet d'avoir une
+// expérience "guest" propre pour les liens partagés.
+const fromLibrary = params.get('from') === 'library';
 
 const LEVEL1_QUESTION_COUNT = 4;       // pick N random from the pool
 const LEVEL1_TIMER_SECONDS = 20;       // observation duration
@@ -108,6 +114,7 @@ function applyZoomToBox(box) {
 }
 
 function resetZoomToHome() {
+  sfxReverse('zoom_in');  // joue le son du zoom à l'envers pour marquer le dézoom
   const stage = $('stage');
   const zi = $('zoom-inner');
   const wrap = $('stage-wrap');
@@ -141,6 +148,11 @@ async function init() {
   game.scene = await r.json();
   $('scene-name').textContent = game.scene.name;
   $('master').src = `scenes/${sceneId}/${game.scene.master_filename || 'master.jpg'}`;
+  // Lien public : on cache le bouton « ← Bibliothèque » du topbar.
+  if (!fromLibrary) {
+    const libBtn = document.querySelector('.topbar a[href="library.html"]');
+    if (libBtn) libBtn.remove();
+  }
   // Applique le style du tracé sauvegardé dans le module (cf. l'éditeur).
   // Sans ça, les contours du player ont un style fixe (3 px, opacité 0.92,
   // pas de glow) qui peut différer de ce qu'a réglé l'auteur dans l'éditeur.
@@ -158,6 +170,14 @@ function sfx(event) {
   if (!game.scene) return;
   if (game.scene.sounds_enabled === false) return;
   try { window.AccrocheSFX.playSound(event, game.scene.sounds || {}); } catch {}
+}
+// Joue le preset associé à `event` À L'ENVERS. Utilisé pour le dezoom :
+// le même son que le zoom, joué backwards, marque le retour à la scène.
+function sfxReverse(event) {
+  if (!window.AccrocheSFX || !window.AccrocheSFX.playReversed) return;
+  if (!game.scene) return;
+  if (game.scene.sounds_enabled === false) return;
+  try { window.AccrocheSFX.playReversed(event, game.scene.sounds || {}); } catch {}
 }
 
 // Délégation : tout clic sur un bouton or primaire joue le son ui_cta.
@@ -712,8 +732,10 @@ function openDialogue() {
     const btn = document.createElement('button');
     btn.className = 'dialogue-choice';
     btn.textContent = `« ${c.text} »`;
-    // Tap sur la page active rien (validation séparée via le bouton
-    // "Valider cette réponse"). Tap sur une page inactive la centre.
+    // Sur DESKTOP grid : le clic = sélectionne (highlight). Validation via
+    // le bouton "Valider cette réponse" séparément.
+    // Sur MOBILE swipe : le clic sur une carte non-active la centre ; sur
+    // l'active rien (la validation est toujours via le bouton).
     btn.addEventListener('click', () => {
       if (viewIdx !== _dialogueChoiceIdx) setDialogueChoiceIdx(viewIdx);
     });
@@ -822,22 +844,53 @@ function onDialoguePick(q, origIdx) {
   $('dialogue-hint-row').classList.add('hidden');
   document.querySelector('.dialogue-body').classList.add('feedback-mode');
 
-  // Feedback card v2 : badge + quote + rule + explication serif italique.
   const fb = $('dialogue-feedback');
   fb.classList.toggle('best', isBest);
-  let text = c.explanation || '';
-  if (!text) text = isBest
-    ? 'Bon choix — vous établissez une vraie connexion.'
-    : 'Pas le meilleur — la cliente reste sur la défensive.';
-  fb.innerHTML =
-    `<span class="lead ${isBest ? 'best' : 'alt'}">` +
-      `${isBest ? '★ Meilleur choix' : 'Choix possible'}` +
-    `</span>` +
-    `<div class="quote">« ${escapeHtml(c.text)} »</div>` +
-    `<div class="rule"></div>` +
-    `<div class="explain">${escapeHtml(text)}</div>`;
+
+  // Construit la (les) card(s) de feedback :
+  //   - si meilleur choix : 1 card "★ Meilleur choix" + leur quote + explication
+  //   - sinon            : 1 card "Votre choix" + leur quote + leur explication
+  //                        + 1 card "Meilleure option" avec la quote+explication
+  //                        du choix qui était le bon.
+  const userExplain = c.explanation
+    || (isBest ? 'Bon choix — vous établissez une vraie connexion.'
+               : 'Pas le meilleur — la cliente reste sur la défensive.');
+
+  let html = renderFeedbackCard({
+    leadClass: isBest ? 'best' : 'alt',
+    leadText: isBest ? '★ Meilleur choix' : 'Votre choix',
+    quote: c.text,
+    explain: userExplain,
+  });
+
+  if (!isBest) {
+    // Trouve la meilleure option pour ce dialogue et l'affiche en second.
+    const best = (q.dialogue_choices || []).find(x => x.is_best);
+    if (best) {
+      const bestExplain = best.explanation
+        || 'Cette formulation respecte le rythme d\'observation de la cliente sans s\'imposer.';
+      html += renderFeedbackCard({
+        leadClass: 'best',
+        leadText: '★ Meilleure option',
+        quote: best.text,
+        explain: bestExplain,
+        secondary: true,
+      });
+    }
+  }
+  fb.innerHTML = html;
   fb.classList.add('shown');
   $('dialogue-close').classList.add('shown');
+}
+
+// Helper de rendu d'une card de feedback (badge + citation + filet + explication).
+function renderFeedbackCard({ leadClass, leadText, quote, explain, secondary }) {
+  return `<div class="feedback-card ${leadClass} ${secondary ? 'is-secondary' : ''}">` +
+    `<span class="lead ${leadClass}">${escapeHtml(leadText)}</span>` +
+    `<div class="quote">« ${escapeHtml(quote)} »</div>` +
+    `<div class="rule"></div>` +
+    `<div class="explain">${escapeHtml(explain)}</div>` +
+  `</div>`;
 }
 
 $('dialogue-close').addEventListener('click', () => {
@@ -869,6 +922,12 @@ function showLevel2Score() {
   $('quest-hint')?.classList.remove('shown');
   blurStage(true);
   sfx('score_reveal');
+  // Sur lien public : pas de retour à la Bibliothèque. On propose plutôt
+  // « Rejouer » qui recharge la scène du début. Sur lien depuis la
+  // bibliothèque : on garde le bouton Bibliothèque comme avant.
+  const ctaPrimary = fromLibrary
+    ? `<a class="btn" href="library.html">Bibliothèque</a>`
+    : `<button class="btn" id="replay">Rejouer</button>`;
   setScreen(`
     <div class="eyebrow">✦ Rideau ✦</div>
     <div class="grand-title">Bravo&nbsp;!</div>
@@ -877,10 +936,11 @@ function showLevel2Score() {
     <p>Continuez à pratiquer — chaque client mérite une approche personnalisée.</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap;">
       <button class="btn secondary" id="back-menu">← Menu</button>
-      <a class="btn" href="library.html">Bibliothèque</a>
+      ${ctaPrimary}
     </div>
   `);
   $('back-menu')?.addEventListener('click', showLevelMenu);
+  $('replay')?.addEventListener('click', () => window.location.reload());
 }
 
 // ---------- utils ----------

@@ -511,11 +511,10 @@
     background: rgba(229,196,141,.12); border-color: var(--accent-line); color: var(--accent);
   }
 
-  /* ---- Dialogue overlay v2 (Velours Théâtre v2) ----
-     Plein écran à partir du topbar (top:52). Pas de voile sombre, pas
-     de flou : l'image C est totalement visible derrière les deux blocs
-     (header en haut, body en bas). pointer-events:none sur le wrap +
-     auto sur chaque bloc → l'image C reste cliquable entre les deux. */
+  /* ---- Dialogue overlay v3 (sans header ni bande noire) ----
+     L'image C reste complètement visible (comme image B en zoom 1).
+     Le dialogue ne s'occupe plus que du body (carousel/feedback) en bas
+     de l'écran. Plus de header card en haut, plus de gradient dark. */
   .dialogue {
     position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
     z-index: 50;
@@ -526,32 +525,8 @@
   }
   .dialogue.shown { display: flex; animation: dialogue-fade 250ms ease; }
   @keyframes dialogue-fade { from { opacity: 0; } to { opacity: 1; } }
-  /* Header card : collée au topbar, fond noir semi-transparent + filet or.
-     border-radius en bas seulement (pas en haut pour s'attacher visuellement
-     au topbar). On retire padding-top du parent pour que la card touche
-     directement la barre du haut. */
-  .dialogue-header {
-    pointer-events: auto;
-    background: rgba(8,5,6,0.86);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--accent-line);
-    border-top: none;
-    border-radius: 0 0 10px 10px;
-    margin: 0 -8px;
-    padding: 14px 18px;
-    text-align: center;
-    box-shadow: 0 6px 20px rgba(0,0,0,.5);
-  }
-  /* Quand le dialogue est ouvert, on pousse l'image C vers le bas pour
-     qu'elle ne soit pas masquée par la header card. Sans ça, l'image
-     reste centrée verticalement et chevauche la card. */
-  body.in-dialogue .quest-overlay .quest-img-wrap {
-    padding-top: 84px;
-    align-items: flex-start;
-  }
-  body.in-dialogue .quest-overlay .quest-img-wrap img {
-    margin-top: 0;
-  }
+  /* Header SUPPRIMÉ (on garde le markup, juste display:none) */
+  .dialogue-header { display: none; }
   .dialogue-header .eyebrow {
     font-size: 10px; letter-spacing: 3px;
     color: var(--accent); text-transform: uppercase;
@@ -570,11 +545,35 @@
 
   /* Carousel translateX : un track flex avec un translate horizontal par
      index. Chaque "page" prend 100% de la largeur du wrap, avec un peu
-     de padding intérieur pour laisser respirer la card centrée. */
+     de padding intérieur pour laisser respirer la card centrée.
+     Sur DESKTOP (>=768px), on bascule en grid 2x2 — toutes les réponses
+     visibles, plus de swipe, sélection au clic + validation séparée. */
   .dialogue-carousel-wrap {
     overflow: hidden;
     border-radius: 10px;
     margin-bottom: 12px;
+  }
+  @media (min-width: 768px) {
+    .dialogue-carousel-wrap { overflow: visible; }
+    .dialogue-carousel-track {
+      transform: none !important;
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      transition: none !important;
+    }
+    .dialogue-carousel-page {
+      flex: none !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+    }
+    .dialogue-choice { min-height: 96px; }
+    /* Hints + dots inutiles sur desktop (toutes les cartes sont visibles).
+       !important pour battre la spécificité de la règle de base déclarée
+       plus loin dans le CSS. */
+    .dialogue-dots, .dialogue-hint-text { display: none !important; }
+    /* Cache la main qui pulse (swipe tease) */
+    .dialogue-swipe-hint { display: none !important; }
   }
   .dialogue-carousel-track {
     display: flex;
@@ -689,42 +688,52 @@
   .dialogue-hint-row.hidden { display: none; }
   .dialogue-carousel-wrap.hidden,
   .dialogue-dots.hidden { display: none; }
-  /* Feedback card v2 : card noire 1.5 fois plus haute, contenant le badge
-     (★ Meilleur choix / Choix possible), la citation du choix (italique),
-     une rule or, puis l'explication en serif italique. */
+  /* Feedback : container vide qui devient une stack de cards (1 ou 2).
+     - 1 card pour le meilleur choix : "★ Meilleur choix"
+     - 2 cards si mauvais : d'abord "Votre choix" (alt), puis "★ Meilleure
+       option" (best, marquée .is-secondary pour le styling distinct). */
   .dialogue-feedback {
+    display: none;
+    margin-bottom: 14px;
+  }
+  .dialogue-feedback.shown { display: block; }
+  .feedback-card {
     background: rgba(8,5,6,0.92);
     backdrop-filter: blur(10px);
     border: 1px solid var(--accent-line);
     border-radius: 10px;
     padding: 18px 20px;
-    margin-bottom: 14px;
     box-shadow: 0 6px 24px rgba(0,0,0,.5);
     text-align: center;
-    display: none;
   }
-  .dialogue-feedback.shown { display: block; }
-  .dialogue-feedback.best { border-color: var(--good); }
-  .dialogue-feedback .lead {
+  .feedback-card + .feedback-card { margin-top: 10px; }
+  .feedback-card.best { border-color: var(--good); }
+  /* Carte "Meilleure option" secondaire — bordure or légèrement plus
+     douce pour ne pas voler l'attention de la card "Votre choix". */
+  .feedback-card.is-secondary {
+    background: rgba(20,15,8,0.92);
+    border-color: var(--accent-line);
+  }
+  .feedback-card .lead {
     display: block;
     font-family: var(--sans); font-style: normal; font-weight: 600;
     font-size: 13px; letter-spacing: 1.8px; text-transform: uppercase;
     margin-bottom: 8px;
   }
-  .dialogue-feedback .lead.best { color: var(--good); }
-  .dialogue-feedback .lead.alt  { color: var(--accent); }
-  .dialogue-feedback .quote {
+  .feedback-card .lead.best { color: var(--good); }
+  .feedback-card .lead.alt  { color: var(--accent); }
+  .feedback-card .quote {
     font-family: var(--sans); font-style: italic; font-weight: 400;
     font-size: 15px; line-height: 1.45;
     color: var(--fg);
     margin-bottom: 10px;
   }
-  .dialogue-feedback .rule {
+  .feedback-card .rule {
     height: 1px; margin: 10px 0;
     background: linear-gradient(90deg, transparent, var(--accent), transparent);
     border: 0;
   }
-  .dialogue-feedback .explain {
+  .feedback-card .explain {
     font-family: var(--serif); font-style: italic; font-weight: 400;
     font-size: 20px; line-height: 1.55;
     color: var(--fg);

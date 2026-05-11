@@ -583,7 +583,7 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
 
 
 # Match URL paths like /api/scenes/<id> or /api/scenes/<id>/load
-_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|quest/[^/]+/generate))?$")
+_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|history|history/restore|quest/[^/]+/generate))?$")
 
 
 def _png_size(path: Path) -> tuple[int, int] | None:
@@ -658,6 +658,121 @@ def _debug_box_info(box_id: str, scene_id: str | None = None) -> dict:
     }
 
 
+HISTORY_MAX = 10
+# Sous-dossiers à snapshoter pour le backup auto. Couvre master + tracés
+# (lineart-svg) + images zoom (imageB / imageC). Les crops/ ne sont pas
+# inclus volontairement : ils sont régénérables et lourds.
+HISTORY_FILES = ["master.jpg", "master.png", "lineart-svg", "exp3/imageB", "exp3/imageC", "boxes.json"]
+
+
+def _backup_scene_dir(scene_id: str) -> str | None:
+    """Snapshot l'état courant des artefacts générés (avant écrasement par
+    le prochain resnap / character_edit). Stocke dans
+    `scenes/<sid>/.history/<timestamp>/<relpath>`. Garde les 10 derniers.
+
+    Renvoie le timestamp du snapshot créé, ou None si rien à sauvegarder.
+    """
+    base = SCENES_DIR / scene_id
+    if not base.exists():
+        return None
+    # Timestamp ISO sans : ni - dans le nom (compatible filesystem)
+    ts = _now_iso().replace(":", "").replace("-", "")
+    history_dir = base / ".history" / ts
+    something_saved = False
+    for rel in HISTORY_FILES:
+        src = base / rel
+        if not src.exists():
+            continue
+        dst = history_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+            something_saved = True
+        except Exception:
+            continue
+    if not something_saved:
+        return None
+    # Rotation : garde les HISTORY_MAX plus récents
+    history_root = base / ".history"
+    if history_root.exists():
+        entries = sorted(
+            [p for p in history_root.iterdir() if p.is_dir()],
+            reverse=True,
+        )
+        for old in entries[HISTORY_MAX:]:
+            shutil.rmtree(old, ignore_errors=True)
+    return ts
+
+
+def _list_scene_history(scene_id: str) -> list[dict]:
+    """Liste les snapshots d'historique d'une scène, du plus récent au plus
+    ancien. Chaque entrée : { timestamp, label, files: [rel, …] }."""
+    base = SCENES_DIR / scene_id
+    history_root = base / ".history"
+    if not history_root.exists():
+        return []
+    out: list[dict] = []
+    for entry in sorted(history_root.iterdir(), reverse=True):
+        if not entry.is_dir():
+            continue
+        files: list[str] = []
+        for p in entry.rglob("*"):
+            if p.is_file():
+                files.append(str(p.relative_to(entry)).replace("\\", "/"))
+        # Label humain : "11 mai · 23:32"
+        ts = entry.name
+        try:
+            # ts = "20260511T133222.123" → parse
+            year = ts[0:4]; month = ts[4:6]; day = ts[6:8]
+            hour = ts[9:11]; mn = ts[11:13]
+            label = f"{day}/{month} · {hour}:{mn}"
+        except Exception:
+            label = ts
+        out.append({"timestamp": ts, "label": label, "files": files})
+    return out
+
+
+def _restore_scene_history(scene_id: str, timestamp: str) -> bool:
+    """Restaure tous les fichiers d'un snapshot dans le scene dir, ÉCRASANT
+    l'état courant. Avant de restaurer, on snapshot l'état courant pour
+    pouvoir undo le undo si besoin."""
+    base = SCENES_DIR / scene_id
+    history_root = base / ".history"
+    snap = history_root / timestamp
+    if not snap.exists() or not snap.is_dir():
+        return False
+    # Snapshot CURRENT before restoring (safety net : on peut revenir
+    # à l'état pré-restore en restaurant le tout dernier snapshot).
+    _backup_scene_dir(scene_id)
+    # Restore : pour chaque fichier/dossier dans le snapshot, on remplace
+    # le pendant courant dans la scène.
+    for rel in HISTORY_FILES:
+        src = snap / rel
+        if not src.exists():
+            continue
+        dst = base / rel
+        if dst.exists():
+            if dst.is_dir():
+                shutil.rmtree(dst, ignore_errors=True)
+            else:
+                dst.unlink()
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+        except Exception:
+            return False
+    # Met aussi à jour public/ si le scene est actuellement chargé pour
+    # édition : on relance _restore_scene qui copie scenes/<sid>/* vers public/*.
+    _restore_scene(scene_id)
+    return True
+
+
 def _resnap_scene(scene_id: str) -> dict | None:
     """Replace asset folders + boxes in the saved scene with current public/ state.
     Preserves name, category, level1_questions, quests, created_at."""
@@ -665,6 +780,9 @@ def _resnap_scene(scene_id: str) -> dict | None:
     meta = _scene_meta(scene_id)
     if not meta:
         return None
+
+    # Backup auto AVANT écrasement (10 derniers snapshots gardés)
+    _backup_scene_dir(scene_id)
 
     # master
     master_src = MASTER_PATH if MASTER_PATH.exists() else (PUBLIC / "master.png")
@@ -789,6 +907,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             _annotate_quest_images(sid, meta)
             self._send_json(200, meta)
+            return
+        # GET /api/scenes/<id>/history → liste des snapshots
+        if m and m.group(3) == "history":
+            sid = m.group(1)
+            base = SCENES_DIR / sid
+            if not base.exists():
+                self._send_json(404, {"error": "scene not found"})
+                return
+            self._send_json(200, {"history": _list_scene_history(sid)})
             return
         super().do_GET()
 
@@ -982,6 +1109,20 @@ class Handler(SimpleHTTPRequestHandler):
                     self._send_json(500, {"error": "restore failed"})
                     return
                 self._send_json(200, {"loaded": sid})
+                return
+
+            if sub == "history/restore":
+                payload = self._read_json()
+                if payload is None: return
+                ts = (payload.get("timestamp") or "").strip()
+                if not ts:
+                    self._send_json(400, {"error": "timestamp required"})
+                    return
+                ok = _restore_scene_history(sid, ts)
+                if not ok:
+                    self._send_json(500, {"error": "history restore failed"})
+                    return
+                self._send_json(200, {"restored": ts})
                 return
 
             if sub == "meta":

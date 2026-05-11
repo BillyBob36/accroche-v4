@@ -2237,3 +2237,66 @@ function escapeHtmlAttr(s) {
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
   }[c]));
 }
+
+// =================== HISTORIQUE des modifications =====================
+// Chaque resnap ou character_edit prend un snapshot dans
+// scenes/<sid>/.history/<timestamp>/. On en garde les 10 plus récents.
+// L'utilisateur peut restaurer un snapshot pour annuler une modification.
+$('open-history').addEventListener('click', async () => {
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  await renderHistoryList();
+  $('history-modal').classList.add('shown');
+  closeTopRail();
+});
+$('history-close').addEventListener('click', () => $('history-modal').classList.remove('shown'));
+
+async function renderHistoryList() {
+  const root = $('history-list');
+  root.innerHTML = '<div class="history-empty">Chargement…</div>';
+  let history = [];
+  try {
+    const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/history`, { cache: 'no-store' });
+    const j = await r.json();
+    history = j.history || [];
+  } catch {}
+  if (!history.length) {
+    root.innerHTML = '<div class="history-empty">Aucun snapshot d\'historique encore. Modifie le master ou les tracés pour en créer un.</div>';
+    return;
+  }
+  root.innerHTML = '';
+  history.forEach(snap => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    // Résumé : nombre de fichiers + premiers types
+    const types = new Set();
+    (snap.files || []).forEach(f => {
+      if (f.startsWith('master.')) types.add('master');
+      else if (f.startsWith('lineart-svg/')) types.add('tracés');
+      else if (f.startsWith('exp3/imageB/')) types.add('zoom 1');
+      else if (f.startsWith('exp3/imageC/')) types.add('zoom 2');
+      else if (f === 'boxes.json') types.add('cadres');
+    });
+    const typesStr = [...types].join(' · ') || 'fichiers';
+    item.innerHTML = `
+      <div class="meta">
+        <div class="ts">${escapeHtmlAttr(snap.label)}</div>
+        <div class="files">${escapeHtmlAttr(typesStr)} · ${snap.files.length} fichier${snap.files.length>1?'s':''}</div>
+      </div>
+      <button class="restore-btn" data-ts="${snap.timestamp}">↶ Restaurer</button>
+    `;
+    item.querySelector('.restore-btn').addEventListener('click', async () => {
+      if (!confirm(`Restaurer l'état du module au ${snap.label} ?\nL'état actuel sera également snapshoté pour pouvoir annuler.`)) return;
+      const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/history/restore`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timestamp: snap.timestamp }),
+      });
+      if (!r.ok) { alert('Restauration échouée.'); return; }
+      $('history-modal').classList.remove('shown');
+      // Recharge entièrement la scène pour voir le master/lineart/imageB restaurés.
+      await loadScene();
+      await loadCurrentSceneMeta();
+      alert('Module restauré. Recharge la page si certains caches d\'image persistent.');
+    });
+    root.appendChild(item);
+  });
+}

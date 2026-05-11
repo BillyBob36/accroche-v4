@@ -834,6 +834,12 @@ function updateDialogueHintText() {
   $('dialogue-hint-text').textContent = `${_dialogueChoiceIdx + 1} / ${n} · Glissez pour parcourir`;
 }
 
+// État du feedback : si on a fait un mauvais choix, on affiche d'abord
+// "Votre choix" et le bouton "Voir la meilleure option →" doit révéler
+// la 2e card avant de pouvoir fermer le dialogue. Le flag est posé par
+// onDialoguePick et lu par le handler de dialogue-close.
+let _dialogueBestPending = null;  // null ou { quote, explain }
+
 function onDialoguePick(q, origIdx) {
   const c = q.dialogue_choices[origIdx];
   const isBest = !!c.is_best;
@@ -847,39 +853,39 @@ function onDialoguePick(q, origIdx) {
   const fb = $('dialogue-feedback');
   fb.classList.toggle('best', isBest);
 
-  // Construit la (les) card(s) de feedback :
-  //   - si meilleur choix : 1 card "★ Meilleur choix" + leur quote + explication
-  //   - sinon            : 1 card "Votre choix" + leur quote + leur explication
-  //                        + 1 card "Meilleure option" avec la quote+explication
-  //                        du choix qui était le bon.
   const userExplain = c.explanation
     || (isBest ? 'Bon choix — vous établissez une vraie connexion.'
                : 'Pas le meilleur — la cliente reste sur la défensive.');
 
-  let html = renderFeedbackCard({
+  // 1re card : "★ Meilleur choix" si bon, sinon "Votre choix".
+  fb.innerHTML = renderFeedbackCard({
     leadClass: isBest ? 'best' : 'alt',
     leadText: isBest ? '★ Meilleur choix' : 'Votre choix',
     quote: c.text,
     explain: userExplain,
   });
+  fb.classList.add('shown');
 
+  // Si mauvais choix : on stocke la meilleure option pour pouvoir la
+  // révéler au clic suivant, et on libelle le bouton "Voir la meilleure
+  // option →" (au lieu de "Continuer").
   if (!isBest) {
-    // Trouve la meilleure option pour ce dialogue et l'affiche en second.
     const best = (q.dialogue_choices || []).find(x => x.is_best);
     if (best) {
-      const bestExplain = best.explanation
-        || 'Cette formulation respecte le rythme d\'observation de la cliente sans s\'imposer.';
-      html += renderFeedbackCard({
-        leadClass: 'best',
-        leadText: '★ Meilleure option',
+      _dialogueBestPending = {
         quote: best.text,
-        explain: bestExplain,
-        secondary: true,
-      });
+        explain: best.explanation
+          || 'Cette formulation respecte le rythme d\'observation de la cliente sans s\'imposer.',
+      };
+      $('dialogue-close').textContent = 'Voir la meilleure option →';
+    } else {
+      _dialogueBestPending = null;
+      $('dialogue-close').textContent = 'Continuer';
     }
+  } else {
+    _dialogueBestPending = null;
+    $('dialogue-close').textContent = 'Continuer';
   }
-  fb.innerHTML = html;
-  fb.classList.add('shown');
   $('dialogue-close').classList.add('shown');
 }
 
@@ -894,6 +900,22 @@ function renderFeedbackCard({ leadClass, leadText, quote, explain, secondary }) 
 }
 
 $('dialogue-close').addEventListener('click', () => {
+  // Si on était sur la card "Votre choix" et qu'une meilleure option est
+  // en attente, on swap la card vers "★ Meilleure option" et on rebascule
+  // le bouton en "Continuer". Le prochain clic ferme vraiment.
+  if (_dialogueBestPending) {
+    const fb = $('dialogue-feedback');
+    fb.classList.add('best');
+    fb.innerHTML = renderFeedbackCard({
+      leadClass: 'best',
+      leadText: '★ Meilleure option',
+      quote: _dialogueBestPending.quote,
+      explain: _dialogueBestPending.explain,
+    });
+    $('dialogue-close').textContent = 'Continuer';
+    _dialogueBestPending = null;
+    return;
+  }
   // mark quest as done
   if (game.currentQuestId) game.questsDone.add(game.currentQuestId);
   $('dialogue').classList.remove('shown');

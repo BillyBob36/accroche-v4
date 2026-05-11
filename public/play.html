@@ -554,6 +554,15 @@
     margin-bottom: 12px;
   }
   @media (min-width: 768px) {
+    /* Desktop : le body (carousel + feedback + boutons) est CENTRÉ et
+       LIMITÉ à 720px de large. Sans ça, sur un écran 1280px+, le grid
+       2x2 produit des cartes énormes. */
+    .dialogue { padding: 0 24px 24px; }
+    .dialogue-body {
+      width: 100%;
+      max-width: 720px;
+      margin: 0 auto;
+    }
     .dialogue-carousel-wrap { overflow: visible; }
     .dialogue-carousel-track {
       transform: none !important;
@@ -567,13 +576,39 @@
       min-width: 0 !important;
       padding: 0 !important;
     }
-    .dialogue-choice { min-height: 96px; }
+    /* Cartes plus petites : ~moitié de la taille mobile.
+       padding 22 → 12, min-height 130 → 64, font-size 20 → 14, line 1.4 → 1.35.
+       !important pour battre la spécificité des règles de base déclarées
+       plus loin dans le CSS. */
+    .dialogue-choice {
+      min-height: 64px !important;
+      padding: 12px 14px !important;
+      font-size: 14px !important;
+      line-height: 1.35 !important;
+      border-radius: 8px !important;
+    }
+    /* Le filet or de l'active devient plus discret aussi */
+    .dialogue-carousel-page.is-active .dialogue-choice {
+      box-shadow: 0 0 14px rgba(229,196,141,.18);
+    }
     /* Hints + dots inutiles sur desktop (toutes les cartes sont visibles).
        !important pour battre la spécificité de la règle de base déclarée
        plus loin dans le CSS. */
     .dialogue-dots, .dialogue-hint-text { display: none !important; }
     /* Cache la main qui pulse (swipe tease) */
     .dialogue-swipe-hint { display: none !important; }
+    /* Feedback card et bouton Valider/Continuer : un peu plus étroits
+       que la grille pour donner de l'air. */
+    .dialogue-feedback,
+    .dialogue-hint-row { max-width: 560px; margin-left: auto; margin-right: auto; }
+    .feedback-card { padding: 16px 18px !important; }
+    .feedback-card .quote { font-size: 14px !important; }
+    .feedback-card .explain { font-size: 17px !important; }
+    .feedback-card .lead { font-size: 12px !important; }
+    /* Bouton Valider plus compact */
+    .dialogue-validate { font-size: 12px !important; padding: 11px 28px !important; }
+    /* Bouton Continuer / Voir la meilleure option aussi plus compact */
+    .dialogue-close { font-size: 13px !important; height: 46px !important; }
   }
   .dialogue-carousel-track {
     display: flex;

@@ -326,8 +326,16 @@ async function renderObservationLayer() {
   layer.innerHTML = '';
   const boxes = game.scene.boxes || [];
   _observationSkelMap = new Map();
-  // Tri gauche → droite : indispensable pour l'algorithme « N portions égales ».
-  _observationSortedBoxes = [...boxes].sort((a, b) => (a.x || 0) - (b.x || 0));
+  // Tri gauche → droite par CENTRE des cadres. Si on triait par bord gauche
+  // (box.x), un cadre large dont le bord gauche commence un peu avant un
+  // cadre étroit serait classé avant alors que son centre visuel est plus
+  // à droite — donnant un ordre de surbrillance contre-intuitif quand les
+  // sujets sont proches. Le centre (x + w/2) est l'ancre visuelle correcte.
+  _observationSortedBoxes = [...boxes].sort((a, b) => {
+    const ca = (a.x || 0) + (a.w || 0) / 2;
+    const cb = (b.x || 0) + (b.w || 0) / 2;
+    return ca - cb;
+  });
 
   for (const box of boxes) {
     // Skel SVG (contour blanc, opaque seulement quand actif)

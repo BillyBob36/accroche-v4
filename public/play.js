@@ -227,7 +227,7 @@ function showLevelMenu() {
     <hr class="rule">
     <p>Bienvenue dans votre formation interactive.</p>
     <p class="big" style="margin-top:14px;"><strong>Niveau 1 — Observation</strong></p>
-    <p style="margin-top:2px;">${nQ} questions disponibles · ${LEVEL1_TIMER_SECONDS}s d'observation · ${LEVEL1_QUESTION_COUNT} tirées au hasard.</p>
+    <p style="margin-top:2px;">${LEVEL1_TIMER_SECONDS}s d'observation · ${LEVEL1_QUESTION_COUNT} questions.</p>
     <p class="big" style="margin-top:14px;"><strong>Niveau 2 — Approche commerciale</strong></p>
     <p style="margin-top:2px;">${nQuests} mini-quête${nQuests > 1 ? 's' : ''} à compléter.</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap;">

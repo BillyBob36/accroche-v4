@@ -19,6 +19,10 @@ const sceneId = params.get('scene');
 // au bouton « Bibliothèque » de l'écran de fin. Permet d'avoir une
 // expérience "guest" propre pour les liens partagés.
 const fromLibrary = params.get('from') === 'library';
+// Mode "Draft" : lien partagé qui permet au joueur de commenter chaque
+// question/quête. Les retours sont stockés dans data/retour_draft.txt
+// côté serveur (PAS dans les corrections — pour l'auteur uniquement).
+const isDraft = params.get('draft') === '1';
 
 const LEVEL1_QUESTION_COUNT = 4;       // pick N random from the pool
 const LEVEL1_TIMER_SECONDS = 20;       // observation duration
@@ -165,6 +169,64 @@ async function init() {
 // Joue le son associé à l'event via AccrocheSFX (cf. sfx.js). On lit le
 // mapping meta.sounds + le flag meta.sounds_enabled du module en cours.
 // Si AccrocheSFX n'est pas chargé ou si sounds_enabled=false, no-op.
+// =================== DRAFT FEEDBACK (mode lien Draft) ===============
+// En mode ?draft=1, après chaque question/quête le joueur peut commenter
+// (was_good true/false + texte libre). Envoyé à /api/scenes/<sid>/draft-feedback
+// et stocké dans data/retour_draft.txt côté serveur (pour l'auteur).
+function sendDraftFeedback(payload) {
+  if (!isDraft || !sceneId) return Promise.resolve();
+  return fetch(`/api/scenes/${encodeURIComponent(sceneId)}/draft-feedback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
+
+// Affiche un widget de feedback inline (bouton 👍/👎 + textarea) sous l'élément
+// `anchorEl`. Renvoie une Promise qui se résout dès que le joueur a tapé
+// "Suivant", qu'il ait commenté ou pas (le commentaire est facultatif).
+function showDraftFeedbackWidget(anchorEl, { type, id, text }) {
+  if (!isDraft) return Promise.resolve();
+  return new Promise(resolve => {
+    const w = document.createElement('div');
+    w.className = 'draft-feedback-widget';
+    w.innerHTML = `
+      <div class="dfw-label">Ton retour sur ${type === 'quest' ? 'cette quête' : 'cette question'} <span class="dfw-mute">(optionnel)</span></div>
+      <div class="dfw-rate">
+        <button class="dfw-btn" data-rate="good">👍 Bien</button>
+        <button class="dfw-btn" data-rate="bad">👎 Pas bien</button>
+      </div>
+      <textarea class="dfw-text" placeholder="Commentaire (optionnel)…"></textarea>
+      <div class="dfw-actions">
+        <button class="dfw-skip">Passer</button>
+        <button class="dfw-send">Envoyer et continuer →</button>
+      </div>
+    `;
+    anchorEl.appendChild(w);
+    let chosenRate = null;
+    w.querySelectorAll('.dfw-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        chosenRate = b.dataset.rate;
+        w.querySelectorAll('.dfw-btn').forEach(x => x.classList.toggle('is-on', x === b));
+      });
+    });
+    w.querySelector('.dfw-skip').addEventListener('click', () => {
+      w.remove(); resolve();
+    });
+    w.querySelector('.dfw-send').addEventListener('click', async () => {
+      const comment = w.querySelector('.dfw-text').value.trim();
+      if (chosenRate || comment) {
+        await sendDraftFeedback({
+          type, id, text,
+          was_good: chosenRate === 'good',
+          comment,
+        });
+      }
+      w.remove();
+      resolve();
+    });
+  });
+}
+
 function sfx(event) {
   if (!window.AccrocheSFX) return;
   if (!game.scene) return;
@@ -530,7 +592,16 @@ function showQuestion() {
     });
   });
 
-  $('qcm-next').addEventListener('click', () => {
+  $('qcm-next').addEventListener('click', async () => {
+    // Mode Draft : avant de passer, on demande un retour optionnel au joueur.
+    if (isDraft) {
+      const card = document.querySelector('.qcm-card');
+      if (card) {
+        await showDraftFeedbackWidget(card, {
+          type: 'question', id: q.id, text: q.text,
+        });
+      }
+    }
     game.qIdx++;
     showQuestion();
   });
@@ -565,10 +636,15 @@ function showScore() {
 function startLevel2() {
   setLevelPill('Niveau 2 · Approche');
   game.questsDone = new Set();
+  game.questsChosen = null;  // re-tirage aléatoire à chaque démarrage du N2
   blurStage(true);
   // Hide the quest counter for now; show the brief
   $('quest-counter').classList.remove('shown');
-  const total = (game.scene.quests || []).length;
+  // Compte le nombre de CADRES distincts ayant au moins une quête (= taille
+  // de la partie après tirage aléatoire), pas le nombre brut de variantes.
+  const activeQuests = (game.scene.quests || []).filter(q => q._rating !== 'refused');
+  const distinctBoxes = new Set(activeQuests.map(q => String(q.box_id || '')));
+  const total = distinctBoxes.size;
   setScreen(`
     <div class="eyebrow">✦ Acte II ✦</div>
     <h2>Approche commerciale</h2>
@@ -595,7 +671,9 @@ function enterQuestMap() {
 }
 
 function updateQuestCounter() {
-  const total = (game.scene.quests || []).length;
+  // Phase 3 : on compte les CADRES qui ont une quête tirée (pas le total brut
+  // des variantes), pour que le compteur reflète l'expérience joueur.
+  const total = game.questsChosen ? game.questsChosen.size : (game.scene.quests || []).length;
   const done = game.questsDone.size;
   const c = $('quest-counter');
   c.textContent = `Quêtes · ${done} / ${total}`;
@@ -608,7 +686,24 @@ function updateQuestCounter() {
 async function renderQuestLayer() {
   const layer = $('quest-layer');
   layer.innerHTML = '';
-  const quests = game.scene.quests || [];
+  // Phase 3 : tirage aléatoire d'une variante par cadre (si un cadre a
+  // plusieurs quêtes, on en choisit une au hasard pour cette partie ; le
+  // tirage est STABLE sur la session — game.questsChosen est mémorisé).
+  const allQuests = (game.scene.quests || []).filter(q => q._rating !== 'refused');
+  if (!game.questsChosen) {
+    const byBox = new Map();
+    for (const q of allQuests) {
+      const k = String(q.box_id || '');
+      if (!byBox.has(k)) byBox.set(k, []);
+      byBox.get(k).push(q);
+    }
+    game.questsChosen = new Map();
+    for (const [boxId, variants] of byBox) {
+      const pick = variants[Math.floor(Math.random() * variants.length)];
+      game.questsChosen.set(boxId, pick);
+    }
+  }
+  const quests = [...game.questsChosen.values()];
   const boxesById = Object.fromEntries((game.scene.boxes || []).map(b => [String(b.id), b]));
 
   for (const q of quests) {
@@ -935,7 +1030,7 @@ function renderFeedbackCard({ leadClass, leadText, quote, explain, secondary }) 
   `</div>`;
 }
 
-$('dialogue-close').addEventListener('click', () => {
+$('dialogue-close').addEventListener('click', async () => {
   // Si on était sur la card "Votre choix" et qu'une meilleure option est
   // en attente, on swap la card vers "★ Meilleure option" et on rebascule
   // le bouton en "Continuer". Le prochain clic ferme vraiment.
@@ -951,6 +1046,18 @@ $('dialogue-close').addEventListener('click', () => {
     $('dialogue-close').textContent = 'Continuer';
     _dialogueBestPending = null;
     return;
+  }
+  // Mode Draft : avant de réellement fermer le dialogue, demande un retour
+  // optionnel au joueur sur cette quête. Le widget remplace temporairement
+  // les actions ; on attend qu'il se résolve avant de continuer.
+  if (isDraft && game.currentQuestId) {
+    const q = (game.scene.quests || []).find(x => x.id === game.currentQuestId);
+    const body = document.querySelector('.dialogue-body');
+    if (body && q) {
+      await showDraftFeedbackWidget(body, {
+        type: 'quest', id: q.id, text: q.title || '(quête)',
+      });
+    }
   }
   // mark quest as done
   if (game.currentQuestId) game.questsDone.add(game.currentQuestId);

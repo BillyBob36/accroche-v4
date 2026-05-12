@@ -1309,32 +1309,219 @@ function renderQuestionsList() {
   box.innerHTML = '';
   const list = sceneState.meta?.level1_questions || [];
   if (!list.length) {
-    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucune question — clique sur « + Ajouter ».</div>';
+    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucune question — clique sur « + Ajouter » ou « 🪄 Générer ».</div>';
     return;
   }
   list.forEach((q, i) => {
-    const item = document.createElement('div');
-    item.className = 'ql-item';
-    item.innerHTML = `
-      <div class="ql-text"><strong>${i + 1}.</strong> ${q.text}</div>
-      <div class="ql-actions">
-        <button class="edit">Éditer</button>
-        <button class="del">Suppr</button>
-      </div>`;
-    item.querySelector('.edit').addEventListener('click', () => {
-      _returnToMissionsAfterSave = true;
-      _missionsLastTab = 'n1';
-      closeMissionsModal();
-      openQuestionModal(i);
-    });
-    item.querySelector('.del').addEventListener('click', async () => {
-      if (!confirm('Supprimer cette question ?')) return;
-      const newList = list.filter((_, j) => j !== i);
-      await saveSceneMeta({ level1_questions: newList });
-      renderQuestionsList();
-    });
+    if (q._rating === 'refused') return;  // refused → caché de l'UI
+    const item = buildQuestionItem(q, i, list);
     box.appendChild(item);
   });
+}
+
+// Construit un item de liste pour une question N1, avec ses boutons de
+// notation, son expansion inline des choix, et ses formulaires inline pour
+// les notes (✦) et raisons de refus (✗).
+function buildQuestionItem(q, i, list) {
+  const item = document.createElement('div');
+  item.className = 'ql-item ' + (q._rating ? `rated-${q._rating}` : '');
+  const isValidated = q._rating === 'good' || q._rating === 'nuanced';
+  const noteHtml = (q._rating === 'nuanced' && q._note)
+    ? `<div class="ql-note">${escapeHtmlAttr(q._note)}</div>` : '';
+  const choicesRowsHtml = (q.choices || []).map((c, ci) => {
+    const isCorrect = ci === q.correct_index;
+    const choiceRating = (q._choice_ratings && q._choice_ratings[ci]) || null;
+    const cr = choiceRating?.rating;
+    if (cr === 'refused') return ''; // distracteur refusé masqué pendant régénération
+    return `
+      <div class="ql-choice-row" data-ci="${ci}">
+        <span class="mark ${isCorrect ? 'best' : ''}">${isCorrect ? '✓' : '·'}</span>
+        <span class="text">${escapeHtmlAttr(c)}</span>
+        <span class="spinner"></span>
+        <span class="rate-btns">
+          <button class="rate-btn good ${cr==='good'?'is-on':''}"     data-kind="answer" data-action="good"     ${!isValidated?'disabled':''} title="Bien">★</button>
+          <button class="rate-btn nuanced ${cr==='nuanced'?'is-on':''}" data-kind="answer" data-action="nuanced"  ${!isValidated?'disabled':''} title="À nuancer">✦</button>
+          <button class="rate-btn refused ${cr==='refused'?'is-on':''}" data-kind="answer" data-action="refused"  ${!isValidated?'disabled':''} title="Refuser">✗</button>
+        </span>
+      </div>`;
+  }).join('');
+
+  item.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:6px;">
+      <button class="ql-toggle" title="Voir les choix">▸</button>
+      <div class="ql-text" style="flex:1;"><strong>${i + 1}.</strong> ${escapeHtmlAttr(q.text)}${noteHtml}</div>
+      <span class="rate-btns">
+        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="Bien">★</button>
+        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="À nuancer">✦</button>
+        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="Refuser">✗</button>
+      </span>
+      <div class="ql-actions" style="margin-left:6px;">
+        <button class="edit">Éditer</button>
+        <button class="del">Suppr</button>
+      </div>
+    </div>
+    <div class="rate-input-row" data-for="question"></div>
+    <div class="ql-choices">${choicesRowsHtml}</div>
+  `;
+
+  // Toggle expansion des choix
+  const choicesDiv = item.querySelector('.ql-choices');
+  const toggleBtn = item.querySelector('.ql-toggle');
+  toggleBtn.addEventListener('click', () => {
+    const shown = choicesDiv.classList.toggle('shown');
+    toggleBtn.textContent = shown ? '▾' : '▸';
+  });
+
+  // Boutons rating sur la QUESTION
+  item.querySelectorAll('.rate-btn[data-kind="question"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const action = btn.dataset.action;
+      handleRatingClick(item, q, list, 1, 'question', action, null);
+    });
+  });
+
+  // Boutons rating sur chaque réponse
+  item.querySelectorAll('.ql-choice-row').forEach(row => {
+    const ci = parseInt(row.dataset.ci, 10);
+    row.querySelectorAll('.rate-btn[data-kind="answer"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (btn.disabled) return;
+        const action = btn.dataset.action;
+        handleRatingClick(item, q, list, 1, 'answer', action, ci, row);
+      });
+    });
+  });
+
+  // Boutons Éditer / Suppr classiques
+  item.querySelector('.edit').addEventListener('click', () => {
+    _returnToMissionsAfterSave = true;
+    _missionsLastTab = 'n1';
+    closeMissionsModal();
+    openQuestionModal(i);
+  });
+  item.querySelector('.del').addEventListener('click', async () => {
+    if (!confirm('Supprimer cette question ?')) return;
+    const newList = list.filter((_, j) => j !== i);
+    await saveSceneMeta({ level1_questions: newList });
+    renderQuestionsList();
+  });
+  return item;
+}
+
+// Gère un clic sur un bouton de rating. Si action = 'good', sauve direct.
+// Si 'nuanced' ou 'refused', déplie un formulaire inline pour saisir la note.
+function handleRatingClick(item, q, list, level, kind, action, answerIdx, choiceRow) {
+  if (action === 'good') {
+    submitRating(item, q, list, level, kind, 'good', '', answerIdx, choiceRow);
+    return;
+  }
+  // nuanced ou refused → form inline
+  const targetRow = (kind === 'answer' && choiceRow) ? choiceRow : item;
+  // On utilise un seul slot .rate-input-row par item pour la question, ou un slot
+  // injecté dynamiquement pour les réponses (sous la row).
+  let inputRow;
+  if (kind === 'question') {
+    inputRow = item.querySelector('.rate-input-row[data-for="question"]');
+  } else {
+    inputRow = choiceRow.querySelector(':scope > .rate-input-row');
+    if (!inputRow) {
+      inputRow = document.createElement('div');
+      inputRow.className = 'rate-input-row';
+      choiceRow.appendChild(inputRow);
+    }
+  }
+  const promptText = action === 'nuanced'
+    ? 'Note d\'amélioration (sera intégrée aux prochains prompts)'
+    : (kind === 'question'
+        ? 'Pourquoi cette question n\'est pas bonne ? (Elle sera masquée et nourrira les prochains prompts.)'
+        : 'Pourquoi ce choix n\'est pas bon ? (Il sera régénéré automatiquement.)');
+  inputRow.innerHTML = `
+    <div class="label">${promptText}</div>
+    <textarea placeholder="Écris ton commentaire ici…"></textarea>
+    <div class="actions">
+      <button class="cancel">Annuler</button>
+      <button class="save">${action === 'refused' ? 'Refuser' : 'Enregistrer'}</button>
+    </div>`;
+  inputRow.classList.add('shown');
+  const ta = inputRow.querySelector('textarea');
+  setTimeout(() => ta.focus(), 50);
+  inputRow.querySelector('.cancel').onclick = () => {
+    inputRow.classList.remove('shown');
+    inputRow.innerHTML = '';
+  };
+  inputRow.querySelector('.save').onclick = () => {
+    const note = ta.value.trim();
+    if (!note) { ta.focus(); return; }
+    inputRow.classList.remove('shown');
+    inputRow.innerHTML = '';
+    submitRating(item, q, list, level, kind, action, note, answerIdx, choiceRow);
+  };
+}
+
+async function submitRating(item, q, list, level, kind, rating, note, answerIdx, choiceRow) {
+  const body = {
+    level, item_id: q.id, kind, rating, note,
+  };
+  if (kind === 'answer') body.answer_idx = answerIdx;
+  try {
+    const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/rate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('rate ' + r.status);
+  } catch (e) {
+    alert('Notation échouée : ' + e.message);
+    return;
+  }
+  // Mise à jour locale optimiste du meta
+  if (kind === 'question' || kind === 'quest') {
+    q._rating = rating;
+    q._note = note || null;
+  } else if (kind === 'answer') {
+    if (level === 1) {
+      q._choice_ratings = q._choice_ratings || [];
+      while (q._choice_ratings.length < (q.choices || []).length) q._choice_ratings.push(null);
+      q._choice_ratings[answerIdx] = { rating, note: note || null };
+    } else {
+      const c = q.dialogue_choices?.[answerIdx];
+      if (c) { c._rating = rating; c._note = note || null; }
+    }
+  }
+  // Cas spécial : distracteur refusé → on déclenche la régénération auto
+  if (kind === 'answer' && rating === 'refused') {
+    if (choiceRow) choiceRow.classList.add('regenerating');
+    try {
+      const rr = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/regen-distractor`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          level, item_id: q.id, choice_idx: answerIdx, reason: note,
+        }),
+      });
+      const rrj = await rr.json();
+      if (!rr.ok) throw new Error(rrj.error || 'regen ' + rr.status);
+      const newChoice = rrj.new_choice;
+      // Remplace dans le meta local
+      if (level === 1) {
+        q.choices[answerIdx] = newChoice.text;
+        // Reset le rating du nouveau distracteur
+        if (q._choice_ratings) q._choice_ratings[answerIdx] = null;
+      } else {
+        q.dialogue_choices[answerIdx] = {
+          text: newChoice.text || '',
+          is_best: false,
+          explanation: newChoice.explanation || '',
+        };
+      }
+    } catch (e) {
+      alert('Régénération du distracteur échouée : ' + e.message);
+      return;
+    }
+  }
+  // Rerender la liste (qui appliquera rated-refused → caché, etc.)
+  if (level === 1) renderQuestionsList();
+  else renderQuestsList();
 }
 
 $('add-observation-question').addEventListener('click', async () => {
@@ -1523,63 +1710,146 @@ function renderQuestsList() {
   box.innerHTML = '';
   const quests = sceneState.meta?.quests || [];
   if (!quests.length) {
-    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucune quête. Clique sur « + Nouvelle quête ».</div>';
+    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucune quête. Clique sur « + Nouvelle quête » ou « 🪄 Générer ».</div>';
     return;
   }
+  // Phase 3 : groupement par box_id (multi-variantes).
+  const byBox = new Map();
   quests.forEach((q, i) => {
-    const item = document.createElement('div');
-    item.className = 'ql-item';
-    const hasImgs = q._has_images ? '<span style="color:rgba(80,227,164,0.85);">✓ images</span>' : '<span style="color:rgba(255,184,77,0.85);">⚠ images manquantes</span>';
-    item.innerHTML = `
-      <div class="ql-text">
-        <strong>${q.title || 'Quête'}</strong>
-        <span style="color:rgba(255,255,255,0.5);font-size:11px;margin-left:6px;">cadre ${q.box_id || '—'}</span>
-        <div style="font-size:11px;margin-top:3px;">${hasImgs}</div>
-      </div>
-      <div class="ql-actions">
-        <button class="edit">Éditer</button>
-        <button class="regen" title="Régénérer les 2 images">↻</button>
-        <button class="del">Suppr</button>
-      </div>`;
-    item.querySelector('.edit').addEventListener('click', async () => {
-      _returnToMissionsAfterSave = true;
-      _missionsLastTab = 'n2';
-      closeMissionsModal();
-      await loadCurrentSceneMeta();
-      openQuestModal(q.box_id, i);
-    });
-    item.querySelector('.regen').addEventListener('click', async () => {
-      // Les images de la quête viennent du cadre lié (imageB + imageC).
-      // « Régénérer » revient donc à régénérer ces deux images du cadre.
-      const linkedBox = state.boxes.find(b => String(b.id) === String(q.box_id));
-      if (!linkedBox) { alert('Le cadre lié à cette quête n\'existe plus.'); return; }
-      if (!confirm(`Relancer la génération des images zoom du cadre ${q.box_id} (image B + image C) ?`)) return;
-      $('missions-modal').classList.remove('shown');
-      showOverlay({ step: 'Régénération des 2 images du cadre…', step_index: 1, total_steps: 2 });
-      const r = await fetch('/api/regen-box', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          box: linkedBox,
-          opts: { imageB: true, imageC: true, dessin: false },
-          scene_id: sceneState.id,
-        }),
-      });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        setOverlayError(j.error || 'erreur génération'); return;
-      }
-      pollUntilDone({ reloadAfter: false });
-    });
-    item.querySelector('.del').addEventListener('click', async () => {
-      if (!confirm('Supprimer cette quête ?')) return;
-      const newList = quests.filter((_, j) => j !== i);
-      await saveSceneMeta({ quests: newList });
-      renderQuestsList();
-      refreshQuestsOverview();
-      refreshBoxQuestSelect();
-    });
-    box.appendChild(item);
+    const key = String(q.box_id || '?');
+    if (!byBox.has(key)) byBox.set(key, []);
+    byBox.get(key).push({ q, i });
   });
+  const boxesById = Object.fromEntries((sceneState.meta?.boxes || []).map(b => [String(b.id), b]));
+  for (const [boxId, variants] of byBox) {
+    // Filtre refused
+    const visible = variants.filter(v => v.q._rating !== 'refused');
+    if (!visible.length) continue;
+    const group = document.createElement('div');
+    group.className = 'ql-group';
+    const boxObj = boxesById[boxId];
+    const boxLabel = boxObj?.subject?.trim() || `cadre ${boxId}`;
+    // Header de groupe (cadre + dropdown variantes + + Variante)
+    let activeIdx = 0;
+    const renderGroup = () => {
+      const v = visible[activeIdx];
+      group.innerHTML = '';
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(212,184,122,0.08);border:1px solid rgba(212,184,122,0.25);border-radius:6px;margin-bottom:6px;';
+      const dropdown = visible.length > 1
+        ? `<select class="variant-select" style="background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 6px;font-size:11px;">${visible.map((vv, k) => `<option value="${k}" ${k===activeIdx?'selected':''}>Variante ${k+1} / ${visible.length}</option>`).join('')}</select>`
+        : `<span style="font-size:11px;color:rgba(255,255,255,0.45);">Variante unique</span>`;
+      head.innerHTML = `
+        <strong style="color:rgba(212,184,122,0.95);font-size:12px;flex:1;">CADRE ${boxId} · ${escapeHtmlAttr(boxLabel)}</strong>
+        ${dropdown}
+        <button class="add-variant" title="Ajouter une variante" style="background:rgba(212,184,122,0.20);border:1px solid rgba(212,184,122,0.55);color:rgba(240,210,150,1);padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">+ Variante</button>
+      `;
+      group.appendChild(head);
+      // Item de la variante active
+      group.appendChild(buildQuestItem(v.q, v.i, quests));
+      // Wire le dropdown
+      const sel = head.querySelector('.variant-select');
+      if (sel) sel.addEventListener('change', () => {
+        activeIdx = parseInt(sel.value, 10);
+        renderGroup();
+      });
+      head.querySelector('.add-variant').addEventListener('click', async () => {
+        if (variants.length >= 50) { alert('Limite de 50 variantes atteinte pour ce cadre.'); return; }
+        _returnToMissionsAfterSave = true;
+        _missionsLastTab = 'n2';
+        closeMissionsModal();
+        openQuestModal(boxId, -1);
+      });
+    };
+    renderGroup();
+    box.appendChild(group);
+  }
+}
+
+function buildQuestItem(q, i, allQuests) {
+  const item = document.createElement('div');
+  item.className = 'ql-item ' + (q._rating ? `rated-${q._rating}` : '');
+  const isValidated = q._rating === 'good' || q._rating === 'nuanced';
+  const hasImgs = q._has_images
+    ? '<span style="color:rgba(80,227,164,0.85);">✓ images</span>'
+    : '<span style="color:rgba(255,184,77,0.85);">⚠ images manquantes</span>';
+  const noteHtml = (q._rating === 'nuanced' && q._note)
+    ? `<div class="ql-note">${escapeHtmlAttr(q._note)}</div>` : '';
+  const choicesRowsHtml = (q.dialogue_choices || []).map((c, ci) => {
+    if (c._rating === 'refused') return '';
+    const cr = c._rating || null;
+    return `
+      <div class="ql-choice-row" data-ci="${ci}">
+        <span class="mark ${c.is_best ? 'best' : ''}">${c.is_best ? '★' : '·'}</span>
+        <span class="text">« ${escapeHtmlAttr(c.text || '')} »</span>
+        <span class="spinner"></span>
+        <span class="rate-btns">
+          <button class="rate-btn good ${cr==='good'?'is-on':''}"     data-kind="answer" data-action="good"     ${!isValidated?'disabled':''} title="Bien">★</button>
+          <button class="rate-btn nuanced ${cr==='nuanced'?'is-on':''}" data-kind="answer" data-action="nuanced"  ${!isValidated?'disabled':''} title="À nuancer">✦</button>
+          <button class="rate-btn refused ${cr==='refused'?'is-on':''}" data-kind="answer" data-action="refused"  ${!isValidated?'disabled':''} title="Refuser">✗</button>
+        </span>
+      </div>`;
+  }).join('');
+
+  item.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:6px;">
+      <button class="ql-toggle" title="Voir les choix">▸</button>
+      <div class="ql-text" style="flex:1;">
+        <strong>${escapeHtmlAttr(q.title || 'Quête')}</strong>
+        <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;">${hasImgs}</div>
+        ${noteHtml}
+      </div>
+      <span class="rate-btns">
+        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="quest" data-action="good"    title="Bien">★</button>
+        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="quest" data-action="nuanced" title="À nuancer">✦</button>
+        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="quest" data-action="refused" title="Refuser">✗</button>
+      </span>
+      <div class="ql-actions" style="margin-left:6px;">
+        <button class="edit">Éditer</button>
+        <button class="del">Suppr</button>
+      </div>
+    </div>
+    <div class="rate-input-row" data-for="question"></div>
+    <div class="ql-choices">${choicesRowsHtml}</div>
+  `;
+  const choicesDiv = item.querySelector('.ql-choices');
+  const toggleBtn = item.querySelector('.ql-toggle');
+  toggleBtn.addEventListener('click', () => {
+    const shown = choicesDiv.classList.toggle('shown');
+    toggleBtn.textContent = shown ? '▾' : '▸';
+  });
+  item.querySelectorAll('.rate-btn[data-kind="quest"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleRatingClick(item, q, allQuests, 2, 'quest', btn.dataset.action, null);
+    });
+  });
+  item.querySelectorAll('.ql-choice-row').forEach(row => {
+    const ci = parseInt(row.dataset.ci, 10);
+    row.querySelectorAll('.rate-btn[data-kind="answer"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (btn.disabled) return;
+        handleRatingClick(item, q, allQuests, 2, 'answer', btn.dataset.action, ci, row);
+      });
+    });
+  });
+  item.querySelector('.edit').addEventListener('click', async () => {
+    _returnToMissionsAfterSave = true;
+    _missionsLastTab = 'n2';
+    closeMissionsModal();
+    await loadCurrentSceneMeta();
+    openQuestModal(q.box_id, i);
+  });
+  item.querySelector('.del').addEventListener('click', async () => {
+    if (!confirm('Supprimer cette quête (variante) ?')) return;
+    const newList = allQuests.filter((_, j) => j !== i);
+    await saveSceneMeta({ quests: newList });
+    renderQuestsList();
+    refreshQuestsOverview();
+    refreshBoxQuestSelect();
+  });
+  return item;
 }
 $('quests-list-add').addEventListener('click', () => {
   _missionsLastTab = 'n2';
@@ -2249,6 +2519,63 @@ $('open-history').addEventListener('click', async () => {
   closeTopRail();
 });
 $('history-close').addEventListener('click', () => $('history-modal').classList.remove('shown'));
+
+// =================== GÉNÉRATION assistée + refine prompt =============
+function showGptOverlay(label) {
+  const el = $('gpt-overlay');
+  if (!el) return;
+  $('gpt-overlay-label').textContent = label || 'GPT-5.4 travaille…';
+  el.classList.add('shown');
+}
+function hideGptOverlay() { $('gpt-overlay')?.classList.remove('shown'); }
+
+async function doGenerate(level) {
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  const countInput = $(`gen-n${level}-count`);
+  const count = Math.max(1, Math.min(20, parseInt(countInput.value || '1', 10)));
+  const perBox = level === 2 ? $('gen-n2-perbox')?.checked === true : false;
+  showGptOverlay(level === 1
+    ? `GPT-5.4 génère ${count} question(s) d'observation…`
+    : `GPT-5.4 génère ${perBox ? 'une quête par cadre' : count + ' quête(s)'}…`);
+  try {
+    const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/generate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ level, count, per_box: perBox }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    await loadCurrentSceneMeta();
+    if (level === 1) renderQuestionsList();
+    else renderQuestsList();
+  } catch (e) {
+    alert('Génération échouée : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+}
+
+async function doRefinePrompt(level) {
+  if (!confirm(`Affiner le prompt de génération du niveau ${level} ?\n\nGPT relira toutes les corrections enregistrées dans corrections_n${level}.txt et proposera une nouvelle version du prompt système. L'ancienne version sera archivée.`)) return;
+  showGptOverlay('GPT-5.4 relit les corrections + affine le prompt…');
+  try {
+    const r = await fetch('/api/refine-prompt', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ level }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    alert(`✓ Prompt niveau ${level} mis à jour (${j.new_prompt_chars} caractères, ${j.corrections_used} corrections utilisées).\nL'ancienne version a été archivée.`);
+  } catch (e) {
+    alert('Affinage échoué : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+}
+
+$('gen-n1')?.addEventListener('click', () => doGenerate(1));
+$('gen-n2')?.addEventListener('click', () => doGenerate(2));
+$('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
+$('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
 async function renderHistoryList() {
   const root = $('history-list');

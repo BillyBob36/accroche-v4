@@ -158,6 +158,9 @@ async function load() {
         </div>
         <div class="row">
           <button class="btn share-link" data-id="${s.id}" data-name="${s.name.replace(/"/g, '&quot;')}">🔗 Lien public</button>
+          <button class="btn share-draft" data-id="${s.id}" data-name="${s.name.replace(/"/g, '&quot;')}" title="Lien Draft : joueur peut commenter chaque question, retours stockés pour toi">📝 Lien Draft</button>
+        </div>
+        <div class="row">
           <button class="btn danger" data-del="${s.id}" data-name="${s.name.replace(/"/g, '&quot;')}">Supprimer</button>
         </div>
       </div>`;
@@ -186,6 +189,21 @@ async function load() {
         toast('Lien copié : ' + fullUrl);
       } catch {
         prompt('Copie le lien :', fullUrl);
+      }
+    });
+  });
+
+  // Lien Draft : joueur peut commenter chaque question/quête. Les retours
+  // sont stockés dans data/retour_draft.txt côté serveur, destiné à l'auteur.
+  grid.querySelectorAll('.share-draft').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const fullUrl = `${location.origin}/play.html?scene=${encodeURIComponent(id)}&draft=1`;
+      try {
+        await navigator.clipboard.writeText(fullUrl);
+        toast('Lien Draft copié : ' + fullUrl);
+      } catch {
+        prompt('Copie le lien Draft :', fullUrl);
       }
     });
   });

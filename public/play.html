@@ -825,6 +825,94 @@
   }
   .quest-hint.shown { display: block; }
 
+  /* Widget de feedback "Draft" — affiché après chaque question/quête
+     UNIQUEMENT en mode ?draft=1. Permet au joueur de coter rapidement
+     (👍/👎) et d'ajouter un commentaire ; retours envoyés à
+     /api/scenes/<sid>/draft-feedback. Style minimaliste velours. */
+  .draft-feedback-widget {
+    margin-top: 14px;
+    background: rgba(8,5,6,0.86);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--accent-line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
+    animation: dfw-in 250ms cubic-bezier(.2,.7,.2,1) both;
+  }
+  @keyframes dfw-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .draft-feedback-widget .dfw-label {
+    font-family: var(--sans); font-weight: 500;
+    font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .draft-feedback-widget .dfw-label .dfw-mute {
+    color: var(--faint);
+    font-weight: 400; letter-spacing: 0.04em; text-transform: none;
+    margin-left: 4px;
+  }
+  .draft-feedback-widget .dfw-rate {
+    display: flex; gap: 8px; margin-bottom: 10px;
+  }
+  .draft-feedback-widget .dfw-btn {
+    flex: 1;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-family: var(--sans); font-size: 13px;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+  .draft-feedback-widget .dfw-btn:hover {
+    background: rgba(229,196,141,.08);
+    border-color: var(--accent-line);
+  }
+  .draft-feedback-widget .dfw-btn.is-on {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .draft-feedback-widget .dfw-text {
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--sans); font-size: 13px;
+    min-height: 60px;
+    resize: vertical;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+  }
+  .draft-feedback-widget .dfw-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+  .draft-feedback-widget .dfw-skip {
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--line);
+    color: var(--dim);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: var(--sans); font-size: 12px;
+    cursor: pointer;
+  }
+  .draft-feedback-widget .dfw-send {
+    background: linear-gradient(180deg, var(--accent-solid) 0%, #c8a56c 100%);
+    border: none;
+    color: var(--oxblood);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
+    cursor: pointer;
+  }
+
   /* ---- Hint d'observation : indication "glissez" en bas mobile ---------
      Pill velours discrète + main SVG qui glisse de gauche à droite en
      boucle (3s) + texte serif italique champagne. Auto-fade dès qu'on

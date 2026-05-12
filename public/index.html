@@ -755,6 +755,196 @@
     padding: 22px;
   }
 
+  /* ---- Génération + notation dans la modale Missions ---------------- */
+  .missions-genbar {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(212,184,122,0.06);
+    border: 1px solid rgba(212,184,122,0.18);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .missions-genbar .gen-btn {
+    background: linear-gradient(180deg, rgba(212,184,122,0.30), rgba(180,150,90,0.30));
+    border: 1px solid rgba(212,184,122,0.55);
+    color: rgba(255,245,220,0.95);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font: inherit; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: filter 150ms;
+  }
+  .missions-genbar .gen-btn:hover { filter: brightness(1.10); }
+  .missions-genbar .gen-btn.refine {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.85);
+  }
+  .missions-genbar .count-input {
+    width: 56px;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ddd;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit; font-size: 12px;
+    text-align: center;
+  }
+  .missions-genbar label {
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .missions-genbar input[type="checkbox"] { accent-color: rgba(212,184,122,0.95); }
+
+  /* Boutons de notation par item (★ validé / ✦ nuancé / ✗ refusé) */
+  .rate-btns { display: inline-flex; gap: 4px; margin-left: 6px; flex-shrink: 0; }
+  .rate-btn {
+    width: 28px; height: 28px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.55);
+    border-radius: 6px;
+    font: inherit; font-size: 13px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 150ms;
+    padding: 0;
+  }
+  .rate-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.3); }
+  .rate-btn.good        { color: rgba(120,210,160,0.85); }
+  .rate-btn.good.is-on  { background: rgba(120,210,160,0.18); border-color: rgba(120,210,160,0.6); color: rgba(180,240,200,1); }
+  .rate-btn.nuanced     { color: rgba(212,184,122,0.85); }
+  .rate-btn.nuanced.is-on { background: rgba(212,184,122,0.18); border-color: rgba(212,184,122,0.7); color: rgba(240,210,150,1); }
+  .rate-btn.refused     { color: rgba(255,140,140,0.85); }
+  .rate-btn.refused.is-on { background: rgba(255,140,140,0.14); border-color: rgba(255,140,140,0.6); color: rgba(255,180,180,1); }
+  .rate-btn:disabled    { opacity: 0.25; cursor: not-allowed; }
+
+  /* État visuel de l'item selon son rating */
+  .ql-item.rated-good { border-left: 3px solid rgba(120,210,160,0.7); }
+  .ql-item.rated-nuanced { border-left: 3px solid rgba(212,184,122,0.7); }
+  /* Refused items disappear from list */
+  .ql-item.rated-refused { display: none; }
+
+  /* Note d'amélioration (✦) — affichée discrètement sous le texte */
+  .ql-note {
+    font-size: 11px; color: rgba(212,184,122,0.75);
+    font-style: italic;
+    margin-top: 4px;
+    padding-left: 12px;
+    border-left: 2px solid rgba(212,184,122,0.4);
+  }
+
+  /* Form inline qui se déplie pour saisir la note (✦) ou la raison (✗) */
+  .rate-input-row {
+    display: none;
+    margin-top: 8px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(212,184,122,0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .rate-input-row.shown { display: block; }
+  .rate-input-row textarea {
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ddd;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font: inherit; font-size: 12px;
+    min-height: 50px;
+    resize: vertical;
+    margin-bottom: 8px;
+  }
+  .rate-input-row .label {
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .rate-input-row .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .rate-input-row button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ddd;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font: inherit; font-size: 11px;
+    cursor: pointer;
+  }
+  .rate-input-row button.save {
+    background: rgba(212,184,122,0.20);
+    border-color: rgba(212,184,122,0.55);
+    color: rgba(240,210,150,1);
+  }
+
+  /* Inline expansion des choix d'une question/quête */
+  .ql-toggle {
+    background: none; border: none;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 11px;
+    margin-right: 4px;
+  }
+  .ql-toggle:hover { color: rgba(212,184,122,0.95); }
+  .ql-choices {
+    display: none;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 6px;
+    border-left: 2px solid rgba(255,255,255,0.08);
+  }
+  .ql-choices.shown { display: block; }
+  .ql-choice-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+  }
+  .ql-choice-row:last-child { border-bottom: none; }
+  .ql-choice-row .mark {
+    width: 18px; flex-shrink: 0; text-align: center;
+    color: rgba(212,184,122,0.95); font-weight: 700;
+  }
+  .ql-choice-row .mark.best { color: rgba(120,210,160,0.95); }
+  .ql-choice-row .text { flex: 1; color: rgba(255,255,255,0.85); min-width: 0; word-wrap: break-word; }
+  .ql-choice-row.regenerating .text { opacity: 0.4; }
+  .ql-choice-row .spinner {
+    display: none;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(212,184,122,0.3);
+    border-top-color: rgba(212,184,122,0.95);
+    border-radius: 50%;
+    animation: ql-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  .ql-choice-row.regenerating .spinner { display: inline-block; }
+  @keyframes ql-spin { to { transform: rotate(360deg); } }
+
+  /* Overlay de génération en cours */
+  .gen-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(6px);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px;
+    color: rgba(212,184,122,0.95);
+    font-size: 14px;
+  }
+  .gen-overlay.shown { display: flex; }
+  .gen-overlay .ring {
+    width: 48px; height: 48px;
+    border: 3px solid rgba(212,184,122,0.25);
+    border-top-color: rgba(212,184,122,0.95);
+    border-radius: 50%;
+    animation: ql-spin 0.9s linear infinite;
+  }
+
   /* Sous-onglets du modal Missions */
   .missions-tabs {
     display: flex; gap: 4px;
@@ -1440,6 +1630,12 @@
   </div>
 </div>
 
+<!-- Overlay pendant les appels GPT (générer / refine / régénérer un distracteur) -->
+<div class="gen-overlay" id="gpt-overlay">
+  <div class="ring"></div>
+  <div id="gpt-overlay-label">GPT-5.4 travaille…</div>
+</div>
+
 <!-- ----- Modal Missions : sous-onglets N1 (observations) et N2 (quêtes) ----- -->
 <div id="missions-modal" class="modal-overlay">
   <div class="modal">
@@ -1451,14 +1647,28 @@
     </div>
     <!-- Panneau N1 : questions d'observation -->
     <div class="missions-pane" data-mpane="n1">
-      <div id="ql-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+      <div class="missions-genbar">
+        <button class="gen-btn" id="gen-n1">🪄 Générer</button>
+        <input type="number" class="count-input" id="gen-n1-count" value="4" min="1" max="20">
+        <label>questions</label>
+        <div style="flex:1;"></div>
+        <button class="gen-btn refine" id="refine-n1" title="Améliore le prompt à partir des corrections accumulées">🔧 Affiner le prompt</button>
+      </div>
+      <div id="ql-items" style="display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow-y:auto;"></div>
       <div class="modal-actions">
         <button class="btn" id="ql-add">+ Ajouter une question</button>
       </div>
     </div>
     <!-- Panneau N2 : quêtes -->
     <div class="missions-pane" data-mpane="n2" style="display:none;">
-      <div id="quests-list-items" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;"></div>
+      <div class="missions-genbar">
+        <button class="gen-btn" id="gen-n2">🪄 Générer</button>
+        <input type="number" class="count-input" id="gen-n2-count" value="1" min="1" max="20">
+        <label><input type="checkbox" id="gen-n2-perbox"> par cadre</label>
+        <div style="flex:1;"></div>
+        <button class="gen-btn refine" id="refine-n2" title="Améliore le prompt à partir des corrections accumulées">🔧 Affiner le prompt</button>
+      </div>
+      <div id="quests-list-items" style="display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow-y:auto;"></div>
       <div class="modal-actions">
         <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
       </div>

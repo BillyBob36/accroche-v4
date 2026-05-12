@@ -153,21 +153,30 @@ def _bad_examples_notes(level: int, limit: int = 30) -> str:
 
 # ----------------- Génération principale -----------------
 
+def _fill_prompt(template: str, values: dict) -> str:
+    """Remplace les `{key}` par leur valeur via str.replace — évite les
+    soucis de `.format()` quand le template contient des `{...}` JSON."""
+    out = template
+    for k, v in values.items():
+        out = out.replace("{" + k + "}", str(v))
+    return out
+
+
 def generate_n1_questions(scene_id: str, count: int = 4) -> list[dict]:
     """Génère N questions QCM pour la scène. Renvoie la liste à ajouter
     à `meta.level1_questions`. N'écrit PAS le meta — l'appelant le fait."""
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(1)
-    prompt_filled = prompt_template.format(
-        scene_context=(
+    prompt_filled = _fill_prompt(prompt_template, {
+        "scene_context": (
             f"Module : {ctx['name']}\n"
             f"Catégorie : {ctx['category']}\n"
             f"Personnages présents ({ctx['n_boxes']}) :\n{ctx['boxes_text']}\n"
             f"Objectif : génère {count} question(s) QCM d'observation."
         ),
-        good_examples=_good_examples(ctx["level1_existing"], level=1),
-        bad_examples_notes=_bad_examples_notes(level=1),
-    )
+        "good_examples": _good_examples(ctx["level1_existing"], level=1),
+        "bad_examples_notes": _bad_examples_notes(level=1),
+    })
     j = chat_json(
         messages=[
             {"role": "system", "content": prompt_filled},
@@ -205,17 +214,17 @@ def generate_n2_quests(scene_id: str, count: int = 1,
     if per_box:
         count = max(1, ctx["n_boxes"])
     prompt_template = read_prompt(2)
-    prompt_filled = prompt_template.format(
-        scene_context=(
+    prompt_filled = _fill_prompt(prompt_template, {
+        "scene_context": (
             f"Module : {ctx['name']}\n"
             f"Catégorie : {ctx['category']}\n"
             f"Personnages disponibles (utilise leur id comme box_id) :\n{ctx['boxes_text']}\n"
             f"Objectif : génère {count} quête(s) d'approche commerciale"
             f" {'(une par cadre, en variant les angles d''approche)' if per_box else ''}."
         ),
-        good_examples=_good_examples(ctx["quests_existing"], level=2),
-        bad_examples_notes=_bad_examples_notes(level=2),
-    )
+        "good_examples": _good_examples(ctx["quests_existing"], level=2),
+        "bad_examples_notes": _bad_examples_notes(level=2),
+    })
     j = chat_json(
         messages=[
             {"role": "system", "content": prompt_filled},
@@ -364,12 +373,13 @@ def refine_prompt(level: int) -> dict:
             f"Note d'abord quelques générations avant d'affiner."
         )
     kind = "questions QCM d'observation" if level == 1 else "quêtes de dialogue commercial"
+    instr = _fill_prompt(REFINE_INSTR, {
+        "kind": kind, "current_prompt": current, "corrections": corrections,
+    })
     new_prompt = chat_text(
         messages=[
             {"role": "system", "content": "Tu es expert en prompt engineering."},
-            {"role": "user", "content": REFINE_INSTR.format(
-                kind=kind, current_prompt=current, corrections=corrections,
-            )},
+            {"role": "user", "content": instr},
         ],
         max_completion_tokens=6000,
         timeout=180,

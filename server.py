@@ -583,7 +583,7 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
 
 
 # Match URL paths like /api/scenes/<id> or /api/scenes/<id>/load
-_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|history|history/restore|generate|rate|regen-distractor|draft-feedback|quest/[^/]+/generate))?$")
+_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|history|history/restore|generate|generate-quest|rate|rate-quest|regen-distractor|draft-feedback|quest/[^/]+/generate))?$")
 
 
 def _png_size(path: Path) -> tuple[int, int] | None:
@@ -1191,6 +1191,90 @@ class Handler(SimpleHTTPRequestHandler):
                 meta["updated_at"] = _now_iso()
                 _write_json(base / "meta.json", meta)
                 self._send_json(200, {"added": len(items), "items": items})
+                return
+
+            # Génère UNE quête N2 pour un cadre précis (vision sur l'image
+            # du cadre + description automatique). Renvoie la quête PAYLOAD
+            # mais ne la persiste PAS — l'éditeur la reçoit, la pré-remplit
+            # dans son modal d'édition où l'utilisateur peut noter et sauver.
+            if sub == "generate-quest":
+                payload = self._read_json()
+                if payload is None: return
+                box_id = (payload.get("box_id") or "").strip()
+                if not box_id:
+                    self._send_json(400, {"error": "box_id requis"}); return
+                try:
+                    sys.path.insert(0, str(ROOT / "pipeline"))
+                    from generate import generate_one_quest_for_box  # noqa
+                    quest = generate_one_quest_for_box(sid, box_id)
+                except Exception as e:
+                    self._send_json(500, {"error": f"generation failed: {e}"}); return
+                self._send_json(200, {"quest": quest})
+                return
+
+            # Sauvegarde groupée des ratings d'une quête depuis le modal d'édition.
+            # Body : { item_id, quest_rating, quest_note, choice_ratings: [{idx,
+            #          rating, note}], box_id, box_subject, box_description }
+            # → met à jour meta + append corrections enrichies avec contexte cadre.
+            if sub == "rate-quest":
+                payload = self._read_json()
+                if payload is None: return
+                item_id = (payload.get("item_id") or "").strip()
+                q_rating = payload.get("quest_rating")
+                q_note = (payload.get("quest_note") or "").strip()
+                choice_ratings = payload.get("choice_ratings") or []
+                box_id = str(payload.get("box_id") or "")
+                box_subject = (payload.get("box_subject") or "").strip()
+                box_description = (payload.get("box_description") or "").strip()
+                meta = _scene_meta(sid) or {}
+                quests = meta.get("quests", [])
+                target = next((x for x in quests if x.get("id") == item_id), None)
+                if not target:
+                    self._send_json(404, {"error": "quest introuvable"}); return
+                from pipeline.generate import append_correction  # noqa
+                base_entry = {
+                    "scene": sid, "level": 2,
+                    "box_id": box_id,
+                    "box_subject": box_subject,
+                    "box_description": box_description,
+                    "quest_title": target.get("title"),
+                    "intro_text": target.get("intro_text"),
+                }
+                # Rating sur la quête entière
+                if q_rating in ("good", "nuanced", "refused"):
+                    target["_rating"] = q_rating
+                    target["_note"] = q_note or None
+                    append_correction(2, {
+                        **base_entry,
+                        "date": _now_iso(),
+                        "kind": "quest",
+                        "rating": q_rating,
+                        "note": q_note,
+                    })
+                # Ratings par choix
+                choices = target.get("dialogue_choices", [])
+                for cr in choice_ratings:
+                    idx = cr.get("idx")
+                    if not isinstance(idx, int) or not (0 <= idx < len(choices)):
+                        continue
+                    rating = cr.get("rating")
+                    if rating not in ("good", "nuanced", "refused"):
+                        continue
+                    note = (cr.get("note") or "").strip()
+                    choices[idx]["_rating"] = rating
+                    choices[idx]["_note"] = note or None
+                    append_correction(2, {
+                        **base_entry,
+                        "date": _now_iso(),
+                        "kind": "answer",
+                        "rating": rating,
+                        "answer": choices[idx].get("text"),
+                        "is_best": bool(choices[idx].get("is_best")),
+                        "note": note,
+                    })
+                meta["updated_at"] = _now_iso()
+                _write_json(base / "meta.json", meta)
+                self._send_json(200, {"saved": True})
                 return
 
             if sub == "rate":

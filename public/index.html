@@ -586,6 +586,13 @@
     overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   }
+  /* La modale Missions hérite aussi de .modal mais doit être plus large
+     car elle affiche listes de questions/quêtes + choix dépliés + boutons
+     de notation côte à côte. */
+  #missions-modal .modal,
+  #quest-modal .modal {
+    max-width: 880px;
+  }
   /* Sur mobile : modale en bottom-sheet (slide depuis le bas, prend toute la
      largeur). Pattern recommandé Material Design / iOS. */
   body.mode-mobile .modal-overlay {
@@ -1730,6 +1737,19 @@
         <option value="">— Choisir un cadre —</option>
       </select>
     </div>
+
+    <!-- Bandeau de génération assistée : apparaît dès qu'un cadre est
+         sélectionné en mode "Nouvelle quête" / "+ Variante". -->
+    <div id="qu-gen-row" style="display:none;margin:10px 0 14px;padding:12px 14px;background:rgba(212,184,122,0.08);border:1px solid rgba(212,184,122,0.30);border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="gen-btn" id="qu-gen-btn" style="background:linear-gradient(180deg,rgba(212,184,122,0.30),rgba(180,150,90,0.30));border:1px solid rgba(212,184,122,0.55);color:rgba(255,245,220,0.95);border-radius:6px;padding:9px 14px;font:inherit;font-size:13px;font-weight:600;letter-spacing:0.04em;cursor:pointer;">🪄 Générer cette quête avec GPT-5.4</button>
+        <div style="flex:1;font-size:11px;color:rgba(255,255,255,0.55);line-height:1.4;">
+          Analyse l'image + le sujet du cadre et propose un titre, un texte
+          d'intro et 4 choix de dialogue. Tu peux noter/modifier ensuite.
+        </div>
+      </div>
+    </div>
+
     <div class="field">
       <div class="field-row"><span class="field-label">Titre court</span></div>
       <input type="text" id="qu-title" placeholder="ex: La grand-mère">
@@ -1745,9 +1765,22 @@
       puis régénère le cadre.
     </div>
     <div class="field">
-      <div class="field-row"><span class="field-label">Choix de dialogue (clique sur l'étoile pour marquer le meilleur)</span></div>
+      <div class="field-row">
+        <span class="field-label">Choix de dialogue (★ marque le meilleur, ✦ note d'amélioration, ✗ refuse)</span>
+      </div>
       <div id="qu-choices" style="display:flex;flex-direction:column;gap:8px;"></div>
       <button class="btn" id="qu-add-choice" style="margin-top:8px;">+ Choix</button>
+    </div>
+    <div class="field">
+      <div class="field-row"><span class="field-label">Note globale sur cette quête (optionnelle, ★ valider · ✦ améliorable · ✗ refuser)</span></div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span class="rate-btns" id="qu-quest-rate">
+          <button class="rate-btn good"    data-action="good"    title="Bien">★</button>
+          <button class="rate-btn nuanced" data-action="nuanced" title="À nuancer">✦</button>
+          <button class="rate-btn refused" data-action="refused" title="Refuser">✗</button>
+        </span>
+        <input type="text" id="qu-quest-rate-note" placeholder="Commentaire (requis pour ✦ ou ✗)" style="flex:1;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:7px 9px;font-family:inherit;font-size:12px;">
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn" id="qu-cancel">Annuler</button>

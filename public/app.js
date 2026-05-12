@@ -1574,8 +1574,77 @@ function openQuestModal(boxId, idx = -1) {
   choices.forEach((c, i) => {
     const row = addChoiceRow(cbox, c.text || '', i === bestIdx, true);
     if (c.explanation) row.querySelector('textarea').value = c.explanation;
+    attachQuestChoiceRating(row, c._rating || null, c._note || '');
   });
+
+  // Bandeau "🪄 Générer cette quête" : visible UNIQUEMENT en mode création
+  // (pas en édition d'une quête existante). On l'affiche dès qu'un cadre
+  // est sélectionné.
+  const genRow = $('qu-gen-row');
+  genRow.style.display = (idx < 0 && sel.value) ? '' : 'none';
+  sel.onchange = () => {
+    genRow.style.display = (idx < 0 && sel.value) ? '' : 'none';
+  };
+
+  // Rating quête (uniquement en mode édition d'une quête existante)
+  const questRateGroup = $('qu-quest-rate');
+  const questRateNote = $('qu-quest-rate-note');
+  if (q) {
+    questRateGroup.parentElement.parentElement.style.display = '';
+    questRateNote.value = q._note || '';
+    questRateGroup.querySelectorAll('.rate-btn').forEach(b => {
+      b.classList.toggle('is-on', b.dataset.action === q._rating);
+    });
+    _editingQuestRating = q._rating || null;
+  } else {
+    // En création : pas de rating possible (l'utilisateur peut noter après save)
+    questRateGroup.parentElement.parentElement.style.display = 'none';
+    questRateNote.value = '';
+    _editingQuestRating = null;
+  }
+
   $('quest-modal').classList.add('shown');
+}
+
+// État du rating en cours d'édition (chip cliquée mais pas encore sauvée)
+let _editingQuestRating = null;
+
+// Attache un mini-bandeau rating ★ ✦ ✗ sous chaque row de choix dans
+// quest-modal. Mémorise le rating + la note dans des attributs data-* pour
+// récupération à la sauvegarde.
+function attachQuestChoiceRating(row, initialRating, initialNote) {
+  const wrap = document.createElement('div');
+  wrap.className = 'qu-choice-rate';
+  wrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.08);';
+  wrap.innerHTML = `
+    <span class="rate-btns">
+      <button class="rate-btn good ${initialRating==='good'?'is-on':''}"     data-action="good"    title="Bien">★</button>
+      <button class="rate-btn nuanced ${initialRating==='nuanced'?'is-on':''}" data-action="nuanced" title="À nuancer">✦</button>
+      <button class="rate-btn refused ${initialRating==='refused'?'is-on':''}" data-action="refused" title="Refuser">✗</button>
+    </span>
+    <input type="text" class="qu-choice-rate-note"
+           placeholder="Commentaire (requis pour ✦ / ✗)"
+           value="${initialNote ? String(initialNote).replace(/"/g,'&quot;') : ''}"
+           style="flex:1;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12px;">
+  `;
+  row.appendChild(wrap);
+  // Stocke le rating sur la row directement
+  row.dataset.rating = initialRating || '';
+  wrap.querySelectorAll('.rate-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      const action = b.dataset.action;
+      // Toggle off si on reclique le même
+      const same = b.classList.contains('is-on');
+      wrap.querySelectorAll('.rate-btn').forEach(x => x.classList.remove('is-on'));
+      if (!same) {
+        b.classList.add('is-on');
+        row.dataset.rating = action;
+      } else {
+        row.dataset.rating = '';
+      }
+    });
+  });
 }
 
 function closeQuestModal() {
@@ -1589,8 +1658,62 @@ function closeQuestModal() {
   }
 }
 
-$('qu-add-choice').addEventListener('click', () => addChoiceRow($('qu-choices'), '', false, true));
+$('qu-add-choice').addEventListener('click', () => {
+  const row = addChoiceRow($('qu-choices'), '', false, true);
+  attachQuestChoiceRating(row, null, '');
+});
 $('qu-cancel').addEventListener('click', closeQuestModal);
+
+// Quest-level rating buttons (★ ✦ ✗ sur la quête entière dans le modal)
+document.querySelectorAll('#qu-quest-rate .rate-btn').forEach(b => {
+  b.addEventListener('click', (e) => {
+    e.preventDefault();
+    const action = b.dataset.action;
+    const same = b.classList.contains('is-on');
+    document.querySelectorAll('#qu-quest-rate .rate-btn').forEach(x => x.classList.remove('is-on'));
+    if (!same) {
+      b.classList.add('is-on');
+      _editingQuestRating = action;
+    } else {
+      _editingQuestRating = null;
+    }
+  });
+});
+
+// 🪄 Génère la quête entière via GPT-5.4 (vision sur l'image du cadre)
+// et pré-remplit les champs du modal. L'utilisateur peut alors éditer
+// et noter avant de sauver.
+$('qu-gen-btn').addEventListener('click', async () => {
+  const boxId = $('qu-box').value.trim();
+  if (!boxId) { alert('Sélectionne d\'abord un cadre.'); return; }
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  showGptOverlay('GPT-5.4 analyse le cadre et génère 4 choix de dialogue…');
+  try {
+    const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/generate-quest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ box_id: boxId }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const quest = j.quest;
+    // Pré-remplit les champs du modal
+    $('qu-title').value = quest.title || '';
+    $('qu-intro').value = quest.intro_text || '';
+    const cbox = $('qu-choices');
+    cbox.innerHTML = '';
+    (quest.dialogue_choices || []).forEach(c => {
+      const row = addChoiceRow(cbox, c.text || '', !!c.is_best, true);
+      if (c.explanation) row.querySelector('textarea').value = c.explanation;
+      attachQuestChoiceRating(row, null, '');
+    });
+    // Stocke la box description (utilisée à la sauvegarde pour l'envoyer aux corrections)
+    $('qu-gen-row').dataset.boxDescription = quest._box_description || '';
+  } catch (e) {
+    alert('Génération échouée : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
 
 async function saveQuest() {
   if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
@@ -1601,23 +1724,99 @@ async function saveQuest() {
   if (!boxIdSel) { alert('Choisis un cadre associé pour cette quête.'); return; }
   if (!title) { alert('Titre manquant.'); return; }
   if (choices.length < 2) { alert('Au moins 2 choix de dialogue.'); return; }
-  const dialogue_choices = choices.map((c, i) => ({
-    text: c.text, explanation: c.explanation, is_best: i === correctIdx,
-  }));
+
+  // Collecte les ratings par choix (lus depuis row.dataset.rating et l'input note)
+  const choiceRows = [...$('qu-choices').querySelectorAll('.choice-row')];
+  const ratingsByIdx = choiceRows.map(row => {
+    const rating = row.dataset.rating || null;
+    const noteInput = row.querySelector('.qu-choice-rate-note');
+    const note = noteInput ? noteInput.value.trim() : '';
+    return { rating, note };
+  });
+  // Valide : nuanced/refused exigent une note
+  for (let i = 0; i < ratingsByIdx.length; i++) {
+    const r = ratingsByIdx[i];
+    if ((r.rating === 'nuanced' || r.rating === 'refused') && !r.note) {
+      alert(`Choix #${i + 1} : commentaire requis pour ✦ ou ✗.`);
+      return;
+    }
+  }
+
+  const dialogue_choices = choices.map((c, i) => {
+    const ent = {
+      text: c.text, explanation: c.explanation, is_best: i === correctIdx,
+    };
+    const r = ratingsByIdx[i];
+    if (r && r.rating) {
+      ent._rating = r.rating;
+      ent._note = r.note || null;
+    }
+    return ent;
+  });
   const id = editingQuestIndex >= 0
     ? sceneState.meta.quests[editingQuestIndex].id
     : 'quest-' + Date.now();
-  // Les images viennent désormais du cadre (imageB pour image1, imageC pour image2).
-  // Plus besoin de stocker des prompts par quête — c'est le cadre qui pilote.
+
+  // Rating quête (uniquement éditable en mode édition d'une quête existante)
+  const questRateNote = $('qu-quest-rate-note').value.trim();
+  const questRating = _editingQuestRating;
+  if (editingQuestIndex >= 0 && (questRating === 'nuanced' || questRating === 'refused') && !questRateNote) {
+    alert('Note requise pour ✦ ou ✗ sur la quête.');
+    return;
+  }
+
   const quest = {
     id, box_id: String(boxIdSel),
     title, intro_text: intro,
     dialogue_choices,
   };
+  if (questRating) {
+    quest._rating = questRating;
+    quest._note = questRateNote || null;
+  }
+  // Préserver le _origin et autres méta s'ils existaient déjà
+  if (editingQuestIndex >= 0) {
+    const prev = sceneState.meta.quests[editingQuestIndex];
+    if (prev._origin) quest._origin = prev._origin;
+  }
+
   const list = [...(sceneState.meta?.quests || [])];
   if (editingQuestIndex >= 0) list[editingQuestIndex] = quest;
   else list.push(quest);
   await saveSceneMeta({ quests: list });
+
+  // Envoie les ratings au backend pour append corrections_n2.txt enrichi
+  // (avec box_id + box_subject + box_description) — seulement si au moins
+  // une note a été posée dans ce save.
+  const anyRating = (questRating != null) || ratingsByIdx.some(r => r.rating);
+  if (anyRating) {
+    const boxObj = state.boxes.find(b => String(b.id) === String(boxIdSel));
+    const boxDescription = $('qu-gen-row').dataset.boxDescription
+      || (sceneState.meta?.boxes || []).find(b => String(b.id) === String(boxIdSel))?._description
+      || '';
+    const payload = {
+      item_id: id,
+      box_id: String(boxIdSel),
+      box_subject: boxObj?.subject || '',
+      box_description: boxDescription,
+      choice_ratings: ratingsByIdx
+        .map((r, i) => r.rating ? { idx: i, rating: r.rating, note: r.note } : null)
+        .filter(Boolean),
+    };
+    if (questRating) {
+      payload.quest_rating = questRating;
+      payload.quest_note = questRateNote;
+    }
+    try {
+      await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/rate-quest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.warn('rate-quest failed', e);
+    }
+  }
+
   // closeQuestModal s'occupe de rouvrir Missions si le flag est posé.
   closeQuestModal();
 }
@@ -1775,19 +1974,14 @@ function buildQuestItem(q, i, allQuests) {
     : '<span style="color:rgba(255,184,77,0.85);">⚠ images manquantes</span>';
   const noteHtml = (q._rating === 'nuanced' && q._note)
     ? `<div class="ql-note">${escapeHtmlAttr(q._note)}</div>` : '';
+  // Niveau 2 : on AFFICHE les choix mais on NE LES NOTE PAS dans la liste
+  // Missions. La notation des choix N2 se fait dans le modal d'édition de
+  // la quête (clic Éditer), où l'on peut aussi régénérer la quête entière.
   const choicesRowsHtml = (q.dialogue_choices || []).map((c, ci) => {
-    if (c._rating === 'refused') return '';
-    const cr = c._rating || null;
     return `
       <div class="ql-choice-row" data-ci="${ci}">
         <span class="mark ${c.is_best ? 'best' : ''}">${c.is_best ? '★' : '·'}</span>
         <span class="text">« ${escapeHtmlAttr(c.text || '')} »</span>
-        <span class="spinner"></span>
-        <span class="rate-btns">
-          <button class="rate-btn good ${cr==='good'?'is-on':''}"     data-kind="answer" data-action="good"     ${!isValidated?'disabled':''} title="Bien">★</button>
-          <button class="rate-btn nuanced ${cr==='nuanced'?'is-on':''}" data-kind="answer" data-action="nuanced"  ${!isValidated?'disabled':''} title="À nuancer">✦</button>
-          <button class="rate-btn refused ${cr==='refused'?'is-on':''}" data-kind="answer" data-action="refused"  ${!isValidated?'disabled':''} title="Refuser">✗</button>
-        </span>
       </div>`;
   }).join('');
 
@@ -1824,16 +2018,8 @@ function buildQuestItem(q, i, allQuests) {
       handleRatingClick(item, q, allQuests, 2, 'quest', btn.dataset.action, null);
     });
   });
-  item.querySelectorAll('.ql-choice-row').forEach(row => {
-    const ci = parseInt(row.dataset.ci, 10);
-    row.querySelectorAll('.rate-btn[data-kind="answer"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (btn.disabled) return;
-        handleRatingClick(item, q, allQuests, 2, 'answer', btn.dataset.action, ci, row);
-      });
-    });
-  });
+  // Pas de wire-up des choix N2 : la notation des choix N2 se fait UNIQUEMENT
+  // dans la modale d'édition (quest-modal), où le contexte du cadre est riche.
   item.querySelector('.edit').addEventListener('click', async () => {
     _returnToMissionsAfterSave = true;
     _missionsLastTab = 'n2';

@@ -116,3 +116,32 @@ def chat_json(messages: list[dict], **kwargs) -> dict:
         return json.loads(txt)
     except json.JSONDecodeError as e:
         raise RuntimeError(f"JSON invalide retourné : {txt[:400]}") from e
+
+
+def image_message_content(text: str, image_path: str | None = None,
+                          detail: str = "auto") -> list[dict]:
+    """Construit un `content` multipart pour Chat (vision-capable).
+
+    Si `image_path` pointe vers un fichier image local, il est encodé en
+    base64 et inclus comme `image_url` data URI. Sinon, seul le texte est
+    renvoyé. Utilisable comme `content` d'un message user.
+
+    `detail` : 'low' (faible coût) | 'high' (analyse fine) | 'auto'.
+    """
+    import base64
+    import mimetypes
+    parts: list[dict] = [{"type": "text", "text": text}]
+    if image_path:
+        from pathlib import Path
+        p = Path(image_path)
+        if p.exists():
+            mime = mimetypes.guess_type(str(p))[0] or "image/jpeg"
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime};base64,{b64}",
+                    "detail": detail,
+                },
+            })
+    return parts

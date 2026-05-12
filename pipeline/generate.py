@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _chat_client import chat_json, chat_text  # noqa: E402
+from _chat_client import chat_json, chat_text, image_message_content  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -261,6 +261,151 @@ def generate_n2_quests(scene_id: str, count: int = 1,
             "_note": None,
         })
     return out
+
+
+# ----------------- Description d'un cadre via vision -----------------
+
+def describe_box(scene_id: str, box_id: str) -> str:
+    """Demande à GPT-5.4 (vision) de décrire en 2-3 phrases le personnage
+    et son contexte visible dans le cadre. Stocké dans meta.boxes[i]._description
+    pour ne pas refaire la vision à chaque génération de quête. Si la
+    description existe déjà, on la retourne directement.
+
+    Cherche l'image dans cet ordre :
+      1. scenes/<sid>/exp3/imageB/box-<id>.jpg (perso + bokeh, idéal)
+      2. scenes/<sid>/crops/box-<id>-input.png (crop master brut)
+    """
+    base = SCENES / scene_id
+    meta_path = base / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    boxes = meta.get("boxes", [])
+    target = next((b for b in boxes if str(b.get("id")) == str(box_id)), None)
+    if not target:
+        raise RuntimeError(f"Cadre {box_id} introuvable dans la scène {scene_id}")
+    # Cache hit ?
+    if target.get("_description"):
+        return target["_description"]
+    # Trouve l'image
+    img_candidates = [
+        base / "exp3" / "imageB" / f"box-{box_id}.jpg",
+        base / "crops" / f"box-{box_id}-input.png",
+    ]
+    img_path = next((p for p in img_candidates if p.exists()), None)
+    if not img_path:
+        # Pas d'image dispo : on retombe sur le sujet textuel
+        return target.get("subject", "").strip() or "(aucune image ni description)"
+    content = image_message_content(
+        text=(
+            "Décris en 2-3 phrases courtes le personnage visible dans cette image "
+            "(âge approximatif, vêtements, posture, regard, action en cours, ambiance). "
+            "Reste factuel et précis — pas d'interprétation psychologique poussée. "
+            "Réponds en français, en une seule phrase fluide."
+        ),
+        image_path=str(img_path),
+        detail="low",
+    )
+    descr = chat_text(
+        messages=[
+            {"role": "system", "content":
+                "Tu es expert en observation comportementale en boutique de luxe. "
+                "Tu décris des personnages que tu vois dans une image."},
+            {"role": "user", "content": content},
+        ],
+        max_completion_tokens=200,
+        timeout=60,
+    ).strip()
+    # Cache la description dans meta
+    target["_description"] = descr
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return descr
+
+
+# ----------------- Génération d'UNE quête liée à un cadre ---------------
+
+def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
+    """Génère UNE seule quête liée à un cadre spécifique. Pipeline :
+      1. Récupère / génère la description du cadre (vision).
+      2. Appelle GPT avec le prompt N2 + contexte cadre + IMAGE en vision.
+      3. Renvoie le payload { title, intro_text, dialogue_choices, _origin:gpt }.
+
+    Le quest n'est PAS persisté ici — l'appelant le fait (l'éditeur attend
+    le retour pour pré-remplir le quest-modal et laisser l'utilisateur
+    noter/éditer avant de sauver).
+    """
+    base = SCENES / scene_id
+    meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
+    target_box = next((b for b in meta.get("boxes", [])
+                       if str(b.get("id")) == str(box_id)), None)
+    if not target_box:
+        raise RuntimeError(f"Cadre {box_id} introuvable")
+
+    # Description (génère via vision si pas encore en cache)
+    box_descr = describe_box(scene_id, box_id)
+
+    # Trouve l'image à passer à GPT (vision) pour la génération
+    img_candidates = [
+        base / "exp3" / "imageB" / f"box-{box_id}.jpg",
+        base / "crops" / f"box-{box_id}-input.png",
+    ]
+    img_path = next((p for p in img_candidates if p.exists()), None)
+
+    # Contexte injecté dans le prompt template
+    ctx = _scene_context(scene_id)
+    prompt_template = read_prompt(2)
+    prompt_filled = _fill_prompt(prompt_template, {
+        "scene_context": (
+            f"Module : {ctx['name']}\n"
+            f"Catégorie : {ctx['category']}\n\n"
+            f"CADRE CIBLE — box_id={box_id}\n"
+            f"Sujet annoté (texte) : {target_box.get('subject','(aucun)')}\n"
+            f"Description visuelle : {box_descr}\n\n"
+            f"Génère UNE quête pour CE personnage spécifiquement, en t'appuyant sur "
+            f"l'image fournie et la description ci-dessus. Le `box_id` à utiliser "
+            f"dans le JSON est exactement : {box_id}"
+        ),
+        "good_examples": _good_examples(ctx["quests_existing"], level=2),
+        "bad_examples_notes": _bad_examples_notes(level=2),
+    })
+
+    user_content = image_message_content(
+        text=(
+            f"Génère UNE quête pour le cadre {box_id} (image fournie). "
+            "Respecte strictement le format JSON spécifié dans le system prompt — "
+            "tu peux renvoyer un objet contenant `quests: [<une seule quête>]`."
+        ),
+        image_path=str(img_path) if img_path else None,
+        detail="high",
+    )
+    j = chat_json(
+        messages=[
+            {"role": "system", "content": prompt_filled},
+            {"role": "user", "content": user_content},
+        ],
+        max_completion_tokens=4000,
+        timeout=180,
+    )
+    quests = j.get("quests", [])
+    if not quests:
+        raise RuntimeError("GPT n'a pas renvoyé de quête")
+    q = quests[0]
+    choices = q.get("dialogue_choices") or []
+    any_best = any(c.get("is_best") for c in choices)
+    if not any_best and choices:
+        choices[0]["is_best"] = True
+    return {
+        "box_id": str(box_id),
+        "title": (q.get("title") or "").strip(),
+        "intro_text": (q.get("intro_text") or "").strip(),
+        "dialogue_choices": [
+            {
+                "text": (c.get("text") or "").strip(),
+                "is_best": bool(c.get("is_best")),
+                "explanation": (c.get("explanation") or "").strip(),
+            } for c in choices
+        ],
+        "_origin": "gpt",
+        "_box_description": box_descr,  # utile pour les corrections plus tard
+    }
 
 
 # ----------------- Régénération d'un distracteur unique -----------------

@@ -1665,9 +1665,9 @@ const RATE_LABELS = {
       refused: "Pas la bonne accroche car…",
     },
     not_best: {
-      good: "Bonne candidate de mauvaise accroche",
+      good: "Bon distracteur",
       nuanced: "Distracteur à nuancer car…",
-      refused: "Mauvaise candidate de mauvaise accroche car…",
+      refused: "Mauvais distracteur car…",
     },
   },
   choice_explain: {
@@ -1677,9 +1677,9 @@ const RATE_LABELS = {
       refused: "Mauvaise explication de pourquoi c'est la bonne accroche car…",
     },
     not_best: {
-      good: "Bonne explication de pourquoi c'est une mauvaise accroche",
+      good: "Bonne explication de pourquoi c'est un distracteur",
       nuanced: "Explication du distracteur à améliorer car…",
-      refused: "Mauvaise explication de pourquoi c'est une mauvaise accroche car…",
+      refused: "Mauvaise explication de pourquoi c'est un distracteur car…",
     },
   },
 };

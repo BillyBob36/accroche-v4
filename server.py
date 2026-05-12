@@ -1212,68 +1212,96 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json(200, {"quest": quest})
                 return
 
-            # Sauvegarde groupée des ratings d'une quête depuis le modal d'édition.
-            # Body : { item_id, quest_rating, quest_note, choice_ratings: [{idx,
-            #          rating, note}], box_id, box_subject, box_description }
-            # → met à jour meta + append corrections enrichies avec contexte cadre.
+            # Sauvegarde groupée des ratings PAR CHAMP d'une quête depuis le
+            # modal d'édition. Payload :
+            #   {
+            #     item_id, box_id, box_subject, box_description,
+            #     quest_title, intro_text,
+            #     title_rating?: { rating, note, label },
+            #     intro_rating?: { rating, note, label },
+            #     choices: [
+            #       { idx, text, is_best, explanation,
+            #         text_rating?: { rating, note, label },
+            #         explain_rating?: { rating, note, label }
+            #       }, ...
+            #     ]
+            #   }
+            # Chaque rating non-null produit une entrée corrections_n2.txt
+            # avec son kind (field_title / field_intro / field_choice_text /
+            # field_choice_explain) + le contexte cadre complet.
             if sub == "rate-quest":
                 payload = self._read_json()
                 if payload is None: return
                 item_id = (payload.get("item_id") or "").strip()
-                q_rating = payload.get("quest_rating")
-                q_note = (payload.get("quest_note") or "").strip()
-                choice_ratings = payload.get("choice_ratings") or []
                 box_id = str(payload.get("box_id") or "")
                 box_subject = (payload.get("box_subject") or "").strip()
                 box_description = (payload.get("box_description") or "").strip()
-                meta = _scene_meta(sid) or {}
-                quests = meta.get("quests", [])
-                target = next((x for x in quests if x.get("id") == item_id), None)
-                if not target:
-                    self._send_json(404, {"error": "quest introuvable"}); return
+                quest_title = (payload.get("quest_title") or "").strip()
+                intro_text = (payload.get("intro_text") or "").strip()
                 from pipeline.generate import append_correction  # noqa
                 base_entry = {
                     "scene": sid, "level": 2,
                     "box_id": box_id,
                     "box_subject": box_subject,
                     "box_description": box_description,
-                    "quest_title": target.get("title"),
-                    "intro_text": target.get("intro_text"),
+                    "quest_title": quest_title,
+                    "intro_text": intro_text,
                 }
-                # Rating sur la quête entière
-                if q_rating in ("good", "nuanced", "refused"):
-                    target["_rating"] = q_rating
-                    target["_note"] = q_note or None
-                    append_correction(2, {
-                        **base_entry,
-                        "date": _now_iso(),
-                        "kind": "quest",
-                        "rating": q_rating,
-                        "note": q_note,
-                    })
-                # Ratings par choix
-                choices = target.get("dialogue_choices", [])
-                for cr in choice_ratings:
-                    idx = cr.get("idx")
-                    if not isinstance(idx, int) or not (0 <= idx < len(choices)):
-                        continue
-                    rating = cr.get("rating")
-                    if rating not in ("good", "nuanced", "refused"):
-                        continue
-                    note = (cr.get("note") or "").strip()
-                    choices[idx]["_rating"] = rating
-                    choices[idx]["_note"] = note or None
-                    append_correction(2, {
-                        **base_entry,
-                        "date": _now_iso(),
-                        "kind": "answer",
-                        "rating": rating,
-                        "answer": choices[idx].get("text"),
-                        "is_best": bool(choices[idx].get("is_best")),
-                        "note": note,
-                    })
-                meta["updated_at"] = _now_iso()
-                _write_json(base / "meta.json", meta)
+                def _entry(kind, *, content=None, is_best=None, rate_blob=None):
+                    if not rate_blob or not rate_blob.get("rating"):
+                        return
+                    e = dict(base_entry)
+                    e["date"] = _now_iso()
+                    e["kind"] = kind
+                    e["rating"] = rate_blob.get("rating")
+                    if rate_blob.get("label"):
+                        e["rating_label"] = rate_blob["label"]
+                    if content is not None:
+                        e["content"] = content
+                    if is_best is not None:
+                        e["is_best"] = bool(is_best)
+                    note = (rate_blob.get("note") or "").strip()
+                    if note:
+                        e["note"] = note
+                    append_correction(2, e)
+                _entry("field_title", content=quest_title, rate_blob=payload.get("title_rating"))
+                _entry("field_intro", content=intro_text, rate_blob=payload.get("intro_rating"))
+                for c in (payload.get("choices") or []):
+                    _entry("field_choice_text",
+                           content=c.get("text",""), is_best=c.get("is_best"),
+                           rate_blob=c.get("text_rating"))
+                    _entry("field_choice_explain",
+                           content=c.get("explanation",""), is_best=c.get("is_best"),
+                           rate_blob=c.get("explain_rating"))
+                # Met à jour aussi meta avec les _field_ratings pour réafficher
+                # à la prochaine ouverture du modal.
+                meta = _scene_meta(sid) or {}
+                target = next((x for x in meta.get("quests", []) if x.get("id") == item_id), None)
+                if target:
+                    fr = {}
+                    if payload.get("title_rating", {}).get("rating"):
+                        fr["title"] = {"rating": payload["title_rating"]["rating"],
+                                       "note": payload["title_rating"].get("note")}
+                    if payload.get("intro_rating", {}).get("rating"):
+                        fr["intro"] = {"rating": payload["intro_rating"]["rating"],
+                                       "note": payload["intro_rating"].get("note")}
+                    if fr: target["_field_ratings"] = fr
+                    target_choices = target.get("dialogue_choices", [])
+                    for c in (payload.get("choices") or []):
+                        idx = c.get("idx")
+                        if not isinstance(idx, int) or not (0 <= idx < len(target_choices)):
+                            continue
+                        cfr = {}
+                        if c.get("text_rating", {}).get("rating"):
+                            cfr["text"] = {"rating": c["text_rating"]["rating"],
+                                           "note": c["text_rating"].get("note")}
+                        if c.get("explain_rating", {}).get("rating"):
+                            cfr["explanation"] = {"rating": c["explain_rating"]["rating"],
+                                                  "note": c["explain_rating"].get("note")}
+                        if cfr:
+                            target_choices[idx]["_field_ratings"] = cfr
+                    meta["updated_at"] = _now_iso()
+                    _write_json(base / "meta.json", meta)
                 self._send_json(200, {"saved": True})
                 return
 

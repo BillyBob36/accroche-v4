@@ -952,6 +952,100 @@
     animation: ql-spin 0.9s linear infinite;
   }
 
+  /* ---- Notation par champ dans quest-modal (Phase fine) ---------------
+     Chaque champ éditable (titre, intro, texte de choix, explication de
+     choix) a sa propre rangée de 3 boutons ★ ✦ ✗ avec une étiquette
+     contextuelle visible AU SURVOL qui dépend du type de champ et du
+     statut is-best. Click sur ✦/✗ déplie un textarea inline qui pré-
+     remplit le préfixe "car…". */
+  .field-rate-row {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 6px;
+    position: relative;
+  }
+  .field-rate-row .rate-btn {
+    position: relative;
+    width: 28px; height: 24px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .field-rate-row .rate-btn .lbl {
+    /* Tooltip révélé au hover : pop-up flottant au-dessus du bouton */
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%; transform: translateX(-50%);
+    background: rgba(20,20,22,0.97);
+    border: 1px solid rgba(212,184,122,0.45);
+    color: rgba(255,245,220,0.95);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 11px; line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  }
+  .field-rate-row .rate-btn:hover .lbl { opacity: 1; }
+  .field-rate-row .rate-btn .lbl::after {
+    /* Petite flèche sous le tooltip */
+    content: "";
+    position: absolute;
+    top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(212,184,122,0.45);
+  }
+  .field-rate-row .rate-status {
+    flex: 1;
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    font-style: italic;
+  }
+  .field-rate-row.has-rating .rate-status {
+    color: rgba(212,184,122,0.85);
+    font-style: normal;
+  }
+  /* Textarea inline qui se déplie sous le champ pour le commentaire */
+  .field-rate-textarea {
+    display: none;
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    color: #ddd;
+    border: 1px solid rgba(212,184,122,0.4);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit; font-size: 12px;
+    margin-top: 6px;
+    min-height: 50px;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .field-rate-textarea.shown { display: block; }
+
+  /* Dans quest-modal, le bouton .choice-mark devient READ-ONLY (info-only)
+     puisque l'IA fixe quel est le meilleur. On le rend cliquable=false. */
+  #quest-modal .choice-mark {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+  /* Petit badge texte pour rappeler le statut "best" / "distracteur" en
+     en-tête de chaque choix dans quest-modal. */
+  .choice-kind-badge {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    margin-left: 6px;
+  }
+  .choice-kind-badge.best {
+    color: rgba(212,184,122,0.95);
+    font-weight: 600;
+  }
+
   /* Sous-onglets du modal Missions */
   .missions-tabs {
     display: flex; gap: 4px;
@@ -1766,21 +1860,10 @@
     </div>
     <div class="field">
       <div class="field-row">
-        <span class="field-label">Choix de dialogue (★ marque le meilleur, ✦ note d'amélioration, ✗ refuse)</span>
+        <span class="field-label">Choix de dialogue (l'IA fixe quel est le meilleur — tu ne peux pas le déplacer)</span>
       </div>
-      <div id="qu-choices" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div id="qu-choices" style="display:flex;flex-direction:column;gap:14px;"></div>
       <button class="btn" id="qu-add-choice" style="margin-top:8px;">+ Choix</button>
-    </div>
-    <div class="field">
-      <div class="field-row"><span class="field-label">Note globale sur cette quête (optionnelle, ★ valider · ✦ améliorable · ✗ refuser)</span></div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <span class="rate-btns" id="qu-quest-rate">
-          <button class="rate-btn good"    data-action="good"    title="Bien">★</button>
-          <button class="rate-btn nuanced" data-action="nuanced" title="À nuancer">✦</button>
-          <button class="rate-btn refused" data-action="refused" title="Refuser">✗</button>
-        </span>
-        <input type="text" id="qu-quest-rate-note" placeholder="Commentaire (requis pour ✦ ou ✗)" style="flex:1;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:7px 9px;font-family:inherit;font-size:12px;">
-      </div>
     </div>
     <div class="modal-actions">
       <button class="btn" id="qu-cancel">Annuler</button>

@@ -583,7 +583,7 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
 
 
 # Match URL paths like /api/scenes/<id> or /api/scenes/<id>/load
-_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|history|history/restore|quest/[^/]+/generate))?$")
+_RE_SCENE = re.compile(r"^/api/scenes/([^/]+)(/(load|meta|resnap|delete|history|history/restore|generate|rate|regen-distractor|draft-feedback|quest/[^/]+/generate))?$")
 
 
 def _png_size(path: Path) -> tuple[int, int] | None:
@@ -1024,6 +1024,26 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, _stop_tunnel())
             return
 
+        # Refinement du prompt système (N1 ou N2) : GPT relit corrections
+        # accumulées + prompt actuel → produit nouvelle version + archive.
+        if path == "/api/refine-prompt":
+            payload = self._read_json()
+            if payload is None: return
+            try:
+                level = int(payload.get("level", 1))
+            except Exception:
+                self._send_json(400, {"error": "level requis"}); return
+            if level not in (1, 2):
+                self._send_json(400, {"error": "level must be 1 or 2"}); return
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from generate import refine_prompt  # noqa
+                result = refine_prompt(level)
+            except Exception as e:
+                self._send_json(500, {"error": f"refine failed: {e}"}); return
+            self._send_json(200, result)
+            return
+
         if path == "/api/character-edit":
             payload = self._read_json()
             if payload is None: return
@@ -1123,6 +1143,230 @@ class Handler(SimpleHTTPRequestHandler):
                     self._send_json(500, {"error": "history restore failed"})
                     return
                 self._send_json(200, {"restored": ts})
+                return
+
+            # ===== Génération assistée + notation =====
+            if sub == "generate":
+                # Body : {level: 1|2, count: int, per_box?: bool}
+                payload = self._read_json()
+                if payload is None: return
+                try:
+                    level = int(payload.get("level", 1))
+                    count = int(payload.get("count", 4))
+                    per_box = bool(payload.get("per_box", False))
+                except Exception:
+                    self._send_json(400, {"error": "level/count invalides"}); return
+                if level not in (1, 2):
+                    self._send_json(400, {"error": "level must be 1 or 2"}); return
+                if count < 1 or count > 20:
+                    self._send_json(400, {"error": "count must be 1..20"}); return
+                # Import paresseux pour ne pas bloquer le démarrage si chat n'est pas configuré
+                try:
+                    sys.path.insert(0, str(ROOT / "pipeline"))
+                    from generate import generate_n1_questions, generate_n2_quests  # noqa
+                except Exception as e:
+                    self._send_json(500, {"error": f"pipeline import: {e}"}); return
+                try:
+                    if level == 1:
+                        items = generate_n1_questions(sid, count)
+                        key = "level1_questions"
+                    else:
+                        items = generate_n2_quests(sid, count, per_box=per_box)
+                        key = "quests"
+                except Exception as e:
+                    self._send_json(500, {"error": f"generation failed: {e}"})
+                    return
+                # Append to meta
+                meta = _scene_meta(sid) or {}
+                meta.setdefault(key, []).extend(items)
+                meta["updated_at"] = _now_iso()
+                _write_json(base / "meta.json", meta)
+                self._send_json(200, {"added": len(items), "items": items})
+                return
+
+            if sub == "rate":
+                # Body : {level, item_id, kind: 'question'|'quest'|'answer',
+                #         rating: 'good'|'nuanced'|'refused', note?, answer_idx?}
+                payload = self._read_json()
+                if payload is None: return
+                level = int(payload.get("level", 1))
+                item_id = (payload.get("item_id") or "").strip()
+                kind = (payload.get("kind") or "").strip()
+                rating = (payload.get("rating") or "").strip()
+                note = (payload.get("note") or "").strip()
+                answer_idx = payload.get("answer_idx")
+                if rating not in ("good", "nuanced", "refused"):
+                    self._send_json(400, {"error": "rating invalide"}); return
+                if rating in ("nuanced", "refused") and not note:
+                    self._send_json(400, {"error": "note requise pour nuanced/refused"}); return
+                meta = _scene_meta(sid) or {}
+                meta_key = "level1_questions" if level == 1 else "quests"
+                items = meta.get(meta_key, [])
+                target = next((x for x in items if x.get("id") == item_id), None)
+                if not target:
+                    self._send_json(404, {"error": "item_id introuvable"}); return
+                # Application du rating
+                from pipeline.generate import append_correction  # noqa
+                if kind in ("question", "quest"):
+                    target["_rating"] = rating
+                    target["_note"] = note or None
+                    # Append au fichier corrections
+                    entry = {
+                        "date": _now_iso(),
+                        "scene": sid,
+                        "level": level,
+                        "kind": "question" if level == 1 else "quest",
+                        "rating": rating,
+                    }
+                    if level == 1:
+                        entry["question"] = target.get("text")
+                        choices = target.get("choices", [])
+                        ci = target.get("correct_index", 0)
+                        entry["choices"] = "\n".join(
+                            f"  - [{('correct' if i == ci else 'distractor')}] {c}"
+                            for i, c in enumerate(choices))
+                    else:
+                        entry["quest_title"] = target.get("title")
+                        entry["intro_text"] = target.get("intro_text")
+                        choices = target.get("dialogue_choices", [])
+                        entry["choices"] = "\n".join(
+                            f"  - [{('best' if c.get('is_best') else 'alt')}] {c.get('text','')}"
+                            for c in choices)
+                    if note:
+                        entry["note"] = note
+                    append_correction(level, entry)
+                elif kind == "answer":
+                    if answer_idx is None:
+                        self._send_json(400, {"error": "answer_idx requis"}); return
+                    answer_idx = int(answer_idx)
+                    if level == 1:
+                        choices = target.get("choices", [])
+                        if not (0 <= answer_idx < len(choices)):
+                            self._send_json(400, {"error": "answer_idx hors borne"}); return
+                        ratings = target.setdefault("_choice_ratings", [None] * len(choices))
+                        while len(ratings) < len(choices):
+                            ratings.append(None)
+                        ratings[answer_idx] = {"rating": rating, "note": note or None}
+                        ci = target.get("correct_index", 0)
+                        is_correct = (answer_idx == ci)
+                        entry = {
+                            "date": _now_iso(), "scene": sid, "level": 1,
+                            "kind": "answer", "rating": rating,
+                            "parent_question": target.get("text"),
+                            "answer": choices[answer_idx],
+                            "is_correct_in_qcm": is_correct,
+                        }
+                    else:
+                        choices = target.get("dialogue_choices", [])
+                        if not (0 <= answer_idx < len(choices)):
+                            self._send_json(400, {"error": "answer_idx hors borne"}); return
+                        c = choices[answer_idx]
+                        c["_rating"] = rating
+                        c["_note"] = note or None
+                        entry = {
+                            "date": _now_iso(), "scene": sid, "level": 2,
+                            "kind": "answer", "rating": rating,
+                            "parent_quest": target.get("title"),
+                            "answer": c.get("text"),
+                            "is_best": bool(c.get("is_best")),
+                        }
+                    if note:
+                        entry["note"] = note
+                    append_correction(level, entry)
+                else:
+                    self._send_json(400, {"error": "kind doit être question|quest|answer"}); return
+                meta["updated_at"] = _now_iso()
+                _write_json(base / "meta.json", meta)
+                self._send_json(200, {"rated": True})
+                return
+
+            if sub == "regen-distractor":
+                # Body : {level, item_id, choice_idx, reason}
+                payload = self._read_json()
+                if payload is None: return
+                level = int(payload.get("level", 1))
+                item_id = (payload.get("item_id") or "").strip()
+                choice_idx = int(payload.get("choice_idx", -1))
+                reason = (payload.get("reason") or "").strip()
+                if not reason:
+                    self._send_json(400, {"error": "reason requise"}); return
+                meta = _scene_meta(sid) or {}
+                meta_key = "level1_questions" if level == 1 else "quests"
+                target = next((x for x in meta.get(meta_key, []) if x.get("id") == item_id), None)
+                if not target:
+                    self._send_json(404, {"error": "item_id introuvable"}); return
+                try:
+                    sys.path.insert(0, str(ROOT / "pipeline"))
+                    from generate import regen_distractor, append_correction  # noqa
+                except Exception as e:
+                    self._send_json(500, {"error": f"pipeline import: {e}"}); return
+                if level == 1:
+                    choices = target.get("choices", [])
+                    if not (0 <= choice_idx < len(choices)):
+                        self._send_json(400, {"error": "choice_idx hors borne"}); return
+                    refused_text = choices[choice_idx]
+                    try:
+                        new_choice = regen_distractor(1, target, refused_text, reason)
+                    except Exception as e:
+                        self._send_json(500, {"error": f"regen failed: {e}"}); return
+                    choices[choice_idx] = new_choice.get("text", "(régénéré)")
+                else:
+                    choices = target.get("dialogue_choices", [])
+                    if not (0 <= choice_idx < len(choices)):
+                        self._send_json(400, {"error": "choice_idx hors borne"}); return
+                    refused_text = choices[choice_idx].get("text", "")
+                    try:
+                        new_choice = regen_distractor(2, target, refused_text, reason)
+                    except Exception as e:
+                        self._send_json(500, {"error": f"regen failed: {e}"}); return
+                    choices[choice_idx] = {
+                        "text": new_choice.get("text", ""),
+                        "is_best": False,
+                        "explanation": new_choice.get("explanation", ""),
+                    }
+                # Append correction du distracteur refusé pour nourrir les prompts
+                append_correction(level, {
+                    "date": _now_iso(), "scene": sid, "level": level,
+                    "kind": "answer", "rating": "refused",
+                    "answer": refused_text,
+                    "note": reason,
+                    "auto_regenerated": True,
+                })
+                meta["updated_at"] = _now_iso()
+                _write_json(base / "meta.json", meta)
+                self._send_json(200, {"new_choice": new_choice})
+                return
+
+            if sub == "draft-feedback":
+                # Body : {type: 'question'|'quest', id, text, was_good: bool, comment}
+                payload = self._read_json()
+                if payload is None: return
+                entry_type = (payload.get("type") or "").strip()
+                tid = (payload.get("id") or "").strip()
+                text = (payload.get("text") or "").strip()
+                was_good = bool(payload.get("was_good", False))
+                comment = (payload.get("comment") or "").strip()
+                # Append à data/retour_draft.txt (PAS à corrections — c'est pour l'auteur)
+                draft_file = ROOT / "data" / "retour_draft.txt"
+                draft_file.parent.mkdir(parents=True, exist_ok=True)
+                block = ["---"]
+                block.append(f"date: {_now_iso()}")
+                block.append(f"scene: {sid}")
+                block.append(f"type: {entry_type}")
+                if tid: block.append(f"id: {tid}")
+                if text:
+                    block.append("text: |")
+                    for line in text.splitlines():
+                        block.append(f"  {line}")
+                block.append(f"was_good: {str(was_good).lower()}")
+                if comment:
+                    block.append("comment: |")
+                    for line in comment.splitlines():
+                        block.append(f"  {line}")
+                block.append("")
+                with draft_file.open("a", encoding="utf-8") as f:
+                    f.write("\n".join(block) + "\n")
+                self._send_json(200, {"logged": True})
                 return
 
             if sub == "meta":

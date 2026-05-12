@@ -843,8 +843,17 @@ class Handler(SimpleHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def _read_json(self) -> dict | None:
+        body = self._read_body()
+        # Décodage tolérant : utf-8 d'abord (cas normal du frontend JS),
+        # puis fallback latin-1 + remplacement pour les bodies venant de
+        # shells / curl qui ne signalent pas l'encoding. Évite que le
+        # serveur crashe (502) sur un caractère accentué mal encodé.
         try:
-            return json.loads(self._read_body().decode("utf-8") or "{}")
+            text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            text = body.decode("utf-8", errors="replace")
+        try:
+            return json.loads(text or "{}")
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return None

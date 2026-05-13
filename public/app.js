@@ -1333,27 +1333,45 @@ function buildQuestionItem(q, i, list) {
     const choiceRating = (q._choice_ratings && q._choice_ratings[ci]) || null;
     const cr = choiceRating?.rating;
     if (cr === 'refused') return ''; // distracteur refusé masqué pendant régénération
+    // Tooltip Q&A contextuel : bonne réponse vs distracteur
+    const labelKey = isCorrect ? 'answer_correct' : 'answer_distractor';
+    const lbls = RATE_LABELS[labelKey].any;
     return `
       <div class="ql-choice-row" data-ci="${ci}">
         <span class="mark ${isCorrect ? 'best' : ''}">${isCorrect ? '✓' : '·'}</span>
         <span class="text">${escapeHtmlAttr(c)}</span>
         <span class="spinner"></span>
         <span class="rate-btns">
-          <button class="rate-btn good ${cr==='good'?'is-on':''}"     data-kind="answer" data-action="good"     ${!isValidated?'disabled':''} title="Bien">★</button>
-          <button class="rate-btn nuanced ${cr==='nuanced'?'is-on':''}" data-kind="answer" data-action="nuanced"  ${!isValidated?'disabled':''} title="À nuancer">✦</button>
-          <button class="rate-btn refused ${cr==='refused'?'is-on':''}" data-kind="answer" data-action="refused"  ${!isValidated?'disabled':''} title="Refuser">✗</button>
+          <button class="rate-btn good ${cr==='good'?'is-on':''}"     data-kind="answer" data-action="good"     ${!isValidated?'disabled':''} title="${escapeHtmlAttr(lbls.good)}">★</button>
+          <button class="rate-btn nuanced ${cr==='nuanced'?'is-on':''}" data-kind="answer" data-action="nuanced"  ${!isValidated?'disabled':''} title="${escapeHtmlAttr(lbls.nuanced)}">✦</button>
+          <button class="rate-btn refused ${cr==='refused'?'is-on':''}" data-kind="answer" data-action="refused"  ${!isValidated?'disabled':''} title="${escapeHtmlAttr(lbls.refused)}">✗</button>
         </span>
       </div>`;
   }).join('');
 
+  // Row dédiée à l'explication (un seul .explanation partagé par la question)
+  const explRating = q._explanation_rating?.rating || null;
+  const explLbls = RATE_LABELS.explanation.any;
+  const explRowHtml = q.explanation ? `
+      <div class="ql-choice-row" data-ci="explanation" style="border-top:1px solid rgba(255,255,255,0.10);margin-top:8px;padding-top:10px;">
+        <span class="mark" title="Explication">ℹ</span>
+        <span class="text" style="font-style:italic;color:rgba(212,184,122,0.85);">${escapeHtmlAttr(q.explanation)}</span>
+        <span class="rate-btns">
+          <button class="rate-btn good ${explRating==='good'?'is-on':''}"     data-kind="explanation" data-action="good"     ${!isValidated?'disabled':''} title="${escapeHtmlAttr(explLbls.good)}">★</button>
+          <button class="rate-btn nuanced ${explRating==='nuanced'?'is-on':''}" data-kind="explanation" data-action="nuanced"  ${!isValidated?'disabled':''} title="${escapeHtmlAttr(explLbls.nuanced)}">✦</button>
+          <button class="rate-btn refused ${explRating==='refused'?'is-on':''}" data-kind="explanation" data-action="refused"  ${!isValidated?'disabled':''} title="${escapeHtmlAttr(explLbls.refused)}">✗</button>
+        </span>
+      </div>` : '';
+
+  const qLbls = RATE_LABELS.question_text.any;
   item.innerHTML = `
     <div style="display:flex;align-items:flex-start;gap:6px;">
       <button class="ql-toggle" title="Voir les choix">▸</button>
       <div class="ql-text" style="flex:1;"><strong>${i + 1}.</strong> ${escapeHtmlAttr(q.text)}${noteHtml}</div>
       <span class="rate-btns">
-        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="Bien">★</button>
-        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="À nuancer">✦</button>
-        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="Refuser">✗</button>
+        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="${escapeHtmlAttr(qLbls.good)}">★</button>
+        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="${escapeHtmlAttr(qLbls.nuanced)}">✦</button>
+        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="${escapeHtmlAttr(qLbls.refused)}">✗</button>
       </span>
       <div class="ql-actions" style="margin-left:6px;">
         <button class="edit">Éditer</button>
@@ -1361,7 +1379,7 @@ function buildQuestionItem(q, i, list) {
       </div>
     </div>
     <div class="rate-input-row" data-for="question"></div>
-    <div class="ql-choices">${choicesRowsHtml}</div>
+    <div class="ql-choices">${choicesRowsHtml}${explRowHtml}</div>
   `;
 
   // Toggle expansion des choix
@@ -1381,15 +1399,25 @@ function buildQuestionItem(q, i, list) {
     });
   });
 
-  // Boutons rating sur chaque réponse
+  // Boutons rating sur chaque réponse + sur l'explication
   item.querySelectorAll('.ql-choice-row').forEach(row => {
-    const ci = parseInt(row.dataset.ci, 10);
+    const ciAttr = row.dataset.ci;
+    const isExplanation = ciAttr === 'explanation';
+    const ci = isExplanation ? null : parseInt(ciAttr, 10);
     row.querySelectorAll('.rate-btn[data-kind="answer"]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         if (btn.disabled) return;
         const action = btn.dataset.action;
         handleRatingClick(item, q, list, 1, 'answer', action, ci, row);
+      });
+    });
+    row.querySelectorAll('.rate-btn[data-kind="explanation"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (btn.disabled) return;
+        const action = btn.dataset.action;
+        handleRatingClick(item, q, list, 1, 'explanation', action, null, row);
       });
     });
   });
@@ -1410,17 +1438,12 @@ function buildQuestionItem(q, i, list) {
   return item;
 }
 
-// Gère un clic sur un bouton de rating. Si action = 'good', sauve direct.
-// Si 'nuanced' ou 'refused', déplie un formulaire inline pour saisir la note.
+// Gère un clic sur un bouton de rating dans la liste N1 inline (Missions).
+// Comportement unifié : ANY rating ouvre un popover avec textarea + Valider/
+// Annuler. Le commentaire est TOUJOURS OPTIONNEL ; on peut valider sans
+// note. Le label du popover est contextuel (Q&A "Pourquoi est-ce X ?")
+// selon le type de champ et le statut (correct vs distracteur).
 function handleRatingClick(item, q, list, level, kind, action, answerIdx, choiceRow) {
-  if (action === 'good') {
-    submitRating(item, q, list, level, kind, 'good', '', answerIdx, choiceRow);
-    return;
-  }
-  // nuanced ou refused → form inline
-  const targetRow = (kind === 'answer' && choiceRow) ? choiceRow : item;
-  // On utilise un seul slot .rate-input-row par item pour la question, ou un slot
-  // injecté dynamiquement pour les réponses (sous la row).
   let inputRow;
   if (kind === 'question') {
     inputRow = item.querySelector('.rate-input-row[data-for="question"]');
@@ -1432,17 +1455,28 @@ function handleRatingClick(item, q, list, level, kind, action, answerIdx, choice
       choiceRow.appendChild(inputRow);
     }
   }
-  const promptText = action === 'nuanced'
-    ? 'Note d\'amélioration (sera intégrée aux prochains prompts)'
-    : (kind === 'question'
-        ? 'Pourquoi cette question n\'est pas bonne ? (Elle sera masquée et nourrira les prochains prompts.)'
-        : 'Pourquoi ce choix n\'est pas bon ? (Il sera régénéré automatiquement.)');
+
+  // Détermine le fieldType pour piocher le bon libellé Q&A
+  let fieldKey;
+  if (kind === 'question') {
+    fieldKey = 'question_text';
+  } else if (kind === 'answer') {
+    const isCorrect = answerIdx === q.correct_index;
+    fieldKey = isCorrect ? 'answer_correct' : 'answer_distractor';
+  } else if (kind === 'explanation') {
+    fieldKey = 'explanation';
+  } else {
+    fieldKey = 'question_text'; // fallback safety
+  }
+  const labelsAll = RATE_LABELS[fieldKey]?.any || RATE_LABELS.question_text.any;
+  const promptText = labelsAll[action];
+
   inputRow.innerHTML = `
-    <div class="label">${promptText}</div>
-    <textarea placeholder="Écris ton commentaire ici…"></textarea>
+    <div class="label">${escapeHtmlAttr(promptText)}</div>
+    <textarea placeholder="${escapeHtmlAttr(promptText)} (optionnel)"></textarea>
     <div class="actions">
       <button class="cancel">Annuler</button>
-      <button class="save">${action === 'refused' ? 'Refuser' : 'Enregistrer'}</button>
+      <button class="save">Valider</button>
     </div>`;
   inputRow.classList.add('shown');
   const ta = inputRow.querySelector('textarea');
@@ -1452,8 +1486,7 @@ function handleRatingClick(item, q, list, level, kind, action, answerIdx, choice
     inputRow.innerHTML = '';
   };
   inputRow.querySelector('.save').onclick = () => {
-    const note = ta.value.trim();
-    if (!note) { ta.focus(); return; }
+    const note = ta.value.trim();  // peut être vide — c'est volontaire
     inputRow.classList.remove('shown');
     inputRow.innerHTML = '';
     submitRating(item, q, list, level, kind, action, note, answerIdx, choiceRow);
@@ -1488,6 +1521,8 @@ async function submitRating(item, q, list, level, kind, rating, note, answerIdx,
       const c = q.dialogue_choices?.[answerIdx];
       if (c) { c._rating = rating; c._note = note || null; }
     }
+  } else if (kind === 'explanation') {
+    q._explanation_rating = { rating, note: note || null };
   }
   // Cas spécial : distracteur refusé → on déclenche la régénération auto
   if (kind === 'answer' && rating === 'refused') {
@@ -1640,46 +1675,77 @@ function _cleanupOldFieldRatings(el) {
   }
 }
 
-// Labels contextuels par type de champ et statut best. Affichés au survol
-// du bouton et utilisés comme contexte pour les corrections.
-// Structure : RATE_LABELS[fieldType][isBest?'best':'not_best'][rating]
+// Labels contextuels au format Q&A : la phrase au survol et le placeholder
+// du textarea sont une QUESTION qui invite l'utilisateur à expliquer.
+// Le commentaire est TOUJOURS optionnel — on peut valider sans note.
+// Structure : RATE_LABELS[fieldType][isBest?'best':'not_best'|'any'][rating]
 const RATE_LABELS = {
+  // ====== Niveau 1 (QCM observation) ======
+  question_text: {
+    any: {
+      good: "Pourquoi est-ce une BONNE question ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans cette question ?",
+      refused: "Pourquoi est-ce une MAUVAISE question ?",
+    },
+  },
+  answer_correct: {
+    any: {
+      good: "Pourquoi est-ce LA bonne réponse ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans cette réponse ?",
+      refused: "Pourquoi ce n'est PAS la bonne réponse ?",
+    },
+  },
+  answer_distractor: {
+    any: {
+      good: "Pourquoi est-ce un BON distracteur ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans ce distracteur ?",
+      refused: "Pourquoi est-ce un MAUVAIS distracteur ?",
+    },
+  },
+  explanation: {
+    any: {
+      good: "Pourquoi est-ce une BONNE explication ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans cette explication ?",
+      refused: "Pourquoi est-ce une MAUVAISE explication ?",
+    },
+  },
+  // ====== Niveau 2 (quest dialogue) ======
   title: {
     any: {
-      good: "Bon titre",
-      nuanced: "Titre à améliorer car…",
-      refused: "Mauvais titre car…",
+      good: "Pourquoi est-ce un BON titre ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans le titre ?",
+      refused: "Pourquoi est-ce un MAUVAIS titre ?",
     },
   },
   intro: {
     any: {
-      good: "Bon texte d'introduction",
-      nuanced: "Intro à améliorer car…",
-      refused: "Mauvaise intro car…",
+      good: "Pourquoi est-ce une BONNE intro ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans l'intro ?",
+      refused: "Pourquoi est-ce une MAUVAISE intro ?",
     },
   },
   choice_text: {
     best: {
-      good: "C'est LA bonne accroche",
-      nuanced: "Bonne accroche mais à nuancer car…",
-      refused: "Pas la bonne accroche car…",
+      good: "Pourquoi est-ce LA bonne accroche ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans cette accroche ?",
+      refused: "Pourquoi ce n'est PAS la bonne accroche ?",
     },
     not_best: {
-      good: "Bon distracteur",
-      nuanced: "Distracteur à nuancer car…",
-      refused: "Mauvais distracteur car…",
+      good: "Pourquoi est-ce un BON distracteur ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans ce distracteur ?",
+      refused: "Pourquoi est-ce un MAUVAIS distracteur ?",
     },
   },
   choice_explain: {
     best: {
-      good: "Bonne explication de pourquoi c'est LA bonne accroche",
-      nuanced: "Explication du meilleur choix à améliorer car…",
-      refused: "Mauvaise explication de pourquoi c'est la bonne accroche car…",
+      good: "Pourquoi est-ce une BONNE explication de pourquoi c'est LA bonne accroche ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans l'explication du meilleur choix ?",
+      refused: "Pourquoi est-ce une MAUVAISE explication ?",
     },
     not_best: {
-      good: "Bonne explication de pourquoi c'est un distracteur",
-      nuanced: "Explication du distracteur à améliorer car…",
-      refused: "Mauvaise explication de pourquoi c'est un distracteur car…",
+      good: "Pourquoi est-ce une BONNE explication de pourquoi c'est un distracteur ?",
+      nuanced: "Qu'est-ce qui pourrait être amélioré dans l'explication du distracteur ?",
+      refused: "Pourquoi est-ce une MAUVAISE explication de pourquoi c'est un distracteur ?",
     },
   },
 };
@@ -1740,7 +1806,10 @@ function attachFieldRating(targetEl, fieldType, isBest, initial = {}) {
   }
 
   updateStatus(initRating);
-  if (initRating === 'nuanced' || initRating === 'refused') showTextarea(labels[initRating]);
+  // Le textarea s'ouvre dès qu'une note est posée (★, ✦ ou ✗). Commentaire
+  // optionnel — on garde même vide. Permet à l'utilisateur d'expliquer
+  // POURQUOI son rating quel qu'il soit.
+  if (initRating) showTextarea(labels[initRating]);
 
   let current = initRating;
   row.querySelectorAll('.rate-btn').forEach(b => {
@@ -1758,13 +1827,9 @@ function attachFieldRating(targetEl, fieldType, isBest, initial = {}) {
       b.classList.add('is-on');
       current = action;
       updateStatus(action);
-      if (action === 'good') {
-        // Pour "good" on cache le textarea (pas besoin de commentaire)
-        // mais si le user veut commenter quand même, double-click ouvre.
-        hideTextarea();
-      } else {
-        showTextarea(labels[action]);
-      }
+      // Toujours ouvrir le textarea (commentaire optionnel) — placeholder
+      // = la question contextuelle "Pourquoi est-ce X ?".
+      showTextarea(labels[action]);
     });
   });
 
@@ -1876,21 +1941,9 @@ async function saveQuest() {
     isBest: c.isBest,
   }));
 
-  // Validation : nuanced/refused exigent une note non vide
-  const fieldsToValidate = [
-    { key: 'titre', r: titleRate },
-    { key: 'intro', r: introRate },
-  ];
-  choiceRates.forEach((cr, i) => {
-    fieldsToValidate.push({ key: `choix #${i+1} texte`, r: cr.text });
-    fieldsToValidate.push({ key: `choix #${i+1} explication`, r: cr.explain });
-  });
-  for (const f of fieldsToValidate) {
-    if ((f.r.rating === 'nuanced' || f.r.rating === 'refused') && !f.r.note) {
-      alert(`Champ "${f.key}" : commentaire requis pour ✦ ou ✗.`);
-      return;
-    }
-  }
+  // Commentaire toujours OPTIONNEL — on accepte les notes sans explication.
+  // Le rating seul (★ ✦ ✗) + le contexte (texte + box) est déjà précieux
+  // pour le fichier corrections, même sans le « pourquoi ».
 
   // Construit le payload des field_ratings (à persister dans meta) + le
   // payload backend pour corrections_n2.txt.

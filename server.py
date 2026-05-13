@@ -1318,8 +1318,9 @@ class Handler(SimpleHTTPRequestHandler):
                 answer_idx = payload.get("answer_idx")
                 if rating not in ("good", "nuanced", "refused"):
                     self._send_json(400, {"error": "rating invalide"}); return
-                if rating in ("nuanced", "refused") and not note:
-                    self._send_json(400, {"error": "note requise pour nuanced/refused"}); return
+                # Note maintenant OPTIONNELLE pour TOUS les ratings — le rating
+                # seul + le contexte (texte de l'item + cadre) est déjà utile
+                # pour le fichier corrections, même sans le « pourquoi ».
                 meta = _scene_meta(sid) or {}
                 meta_key = "level1_questions" if level == 1 else "quests"
                 items = meta.get(meta_key, [])
@@ -1394,8 +1395,20 @@ class Handler(SimpleHTTPRequestHandler):
                     if note:
                         entry["note"] = note
                     append_correction(level, entry)
+                elif kind == "explanation":
+                    # Note sur l'explication globale d'une question N1
+                    target["_explanation_rating"] = {"rating": rating, "note": note or None}
+                    entry = {
+                        "date": _now_iso(), "scene": sid, "level": level,
+                        "kind": "explanation", "rating": rating,
+                        "parent_question": target.get("text"),
+                        "explanation": target.get("explanation"),
+                    }
+                    if note:
+                        entry["note"] = note
+                    append_correction(level, entry)
                 else:
-                    self._send_json(400, {"error": "kind doit être question|quest|answer"}); return
+                    self._send_json(400, {"error": "kind doit être question|quest|answer|explanation"}); return
                 meta["updated_at"] = _now_iso()
                 _write_json(base / "meta.json", meta)
                 self._send_json(200, {"rated": True})

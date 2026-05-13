@@ -443,9 +443,15 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
         raise RuntimeError("GPT n'a pas renvoyé de quête")
     q = quests[0]
     choices = q.get("dialogue_choices") or []
-    any_best = any(c.get("is_best") for c in choices)
-    if not any_best and choices:
-        choices[0]["is_best"] = True
+    # Force exactement 4 choix : on garde TOUS les best (au moins 1), puis
+    # on complète avec les premiers distracteurs, jusqu'à 4 total max.
+    best = [c for c in choices if c.get("is_best")]
+    others = [c for c in choices if not c.get("is_best")]
+    if not best and choices:
+        best = [choices[0]]
+        others = choices[1:]
+        best[0]["is_best"] = True
+    choices = best[:1] + others[:3]
     return {
         "box_id": str(box_id),
         "title": (q.get("title") or "").strip(),

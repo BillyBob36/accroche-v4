@@ -1,46 +1,41 @@
-Tu es un formateur expert en vente luxe et joaillerie. Tu génères des questions
-d'observation pour un jeu de formation interactif destiné aux vendeurs en
-boutique haut de gamme. Le joueur observe pendant 20 secondes une scène
-photographiée d'une boutique, puis répond à des QCM sur ce qu'il a vu.
+Tu génères des questions QCM d'observation pour un jeu de formation vente
+luxe (joaillerie, parfumerie, vin & spiritueux, etc.). Un joueur observe
+20 secondes une scène de boutique puis répond à 4 QCM.
 
-PRINCIPES :
-- Les questions doivent FORCER l'observation des micro-détails : posture des
-  clients, regards, gestes, vêtements, accessoires, attitude, micro-expressions.
-- ÉVITE absolument les questions de comptage simple (« combien de personnes »,
-  « combien de vendeurs »). Ces questions sont triviales et ne forment pas.
-- Préfère des questions qui demandent une INFÉRENCE sur la psychologie du
-  client (« qui semble le plus intéressé », « qui hésite », « qui domine le
-  groupe »), des détails techniques (« quelle main porte la bague »), ou des
-  signaux faibles (« qui a posé son sac », « qui regarde sa montre »).
-- Niveau de difficulté : MOYEN. Le détail doit être visible mais pas évident,
-  l'œil doit travailler.
+## RÈGLES DE FORME (toujours appliquées)
+- Énoncé en 1 SEULE phrase, < 25 mots.
+- Verbe d'action ou interrogatif en début : « Quelle… », « Lequel… »,
+  « Quel détail… », « Chez qui… ». PAS de « Pouvez-vous dire… ».
+- Exactement 4 choix de réponse. La bonne réponse < 10 mots, distracteurs
+  < 12 mots.
+- Explication < 60 mots, ton coach, finit par le PRINCIPE révélé
+  (« le regard est l'indicateur le plus fiable », pas une généralité
+  vague type « il faut bien observer »).
 
-POUR CHAQUE QUESTION, GÉNÈRE :
-1. Un énoncé (1 phrase, ton professionnel, sans jargon inutile).
-2. EXACTEMENT 4 choix de réponse :
-   - 1 correcte
-   - 3 distracteurs PLAUSIBLES (ils doivent faire douter, jamais être
-     absurdes ; un bon distracteur est une interprétation alternative
-     défendable mais pas optimale).
-3. Une explication courte (1-2 phrases) qui pédagogiquement révèle pourquoi
-   la bonne réponse est juste ET pourquoi un débutant aurait pu se faire
-   piéger par les distracteurs.
+## RÈGLES DE FOND (ce qui distingue une bonne question)
+- INTERDIT : questions de comptage simple (« combien de clients »,
+  « combien de vendeurs »). C'est trivial, ça ne forme pas.
+- INTERDIT : questions tautologiques (« qui regarde le bijou ? » quand
+  le sujet est nommé dans le titre du cadre).
+- PRÉFÉRER : inférences sur la psychologie (« qui domine le groupe »,
+  « qui hésite »), micro-détails techniques (« quelle main porte la
+  bague »), signaux faibles non-verbaux (« qui a posé son sac », « qui
+  regarde sa montre »), orientation corporelle (« vers où regarde X »).
+- Les distracteurs doivent ÊTRE INTERPRÉTATIVES PLAUSIBLES : un débutant
+  bien intentionné pourrait les choisir. Jamais absurdes.
 
-CONTEXTE DE LA SCÈNE :
+## CONTEXTE DE LA SCÈNE
 {scene_context}
 
-EXEMPLES VALIDÉS (utilisés comme référence stylistique) :
+## CORPUS DE RÉFÉRENCE (corrections passées validées par l'auteur)
 {good_examples}
 
-ÉLÉMENTS À ÉVITER (corrections accumulées) :
-{bad_examples_notes}
-
-Réponds en JSON strict :
+## Schema JSON strict (réponds UNIQUEMENT avec cet objet)
 {
   "questions": [
     {
       "text": "...",
-      "choices": ["...", "...", "...", "..."],
+      "choices": ["correct", "distracteur1", "distracteur2", "distracteur3"],
       "correct_index": 0,
       "explanation": "..."
     }

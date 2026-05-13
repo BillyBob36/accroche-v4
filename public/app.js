@@ -2970,6 +2970,26 @@ $('gen-n2')?.addEventListener('click', () => doGenerate(2));
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
+$('bootstrap-corpus')?.addEventListener('click', async () => {
+  if (!confirm('Amorcer le corpus RAG ?\n\nToutes les questions N1 et quêtes N2 actuellement présentes dans les modules seront converties en entrées « good » dans corrections_n{1,2}.jsonl avec leurs embeddings.\n\nIdempotent : les items déjà bootstrappés sont ignorés.')) return;
+  showGptOverlay('Calcul des embeddings et écriture des corrections…');
+  try {
+    const r = await fetch('/api/bootstrap-corpus', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({}),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const lines = Object.entries(j.report || {}).map(([sid, r]) =>
+      `· ${sid} : ${r.n1_added} questions N1 + ${r.n2_added} quêtes N2`).join('\n');
+    alert(`✓ Corpus RAG amorcé\n\n${lines || '(rien à ajouter)'}`);
+  } catch (e) {
+    alert('Bootstrap échoué : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
+
 async function renderHistoryList() {
   const root = $('history-list');
   root.innerHTML = '<div class="history-empty">Chargement…</div>';

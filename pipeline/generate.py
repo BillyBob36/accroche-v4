@@ -15,6 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _chat_client import chat_json, chat_text, image_message_content  # noqa: E402
+from _rag import (  # noqa: E402
+    embed_text, load_corrections, append_correction_jsonl,
+    find_top_k, format_corrections_for_prompt,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -53,16 +57,33 @@ def read_corrections(level: int) -> str:
 
 
 def append_correction(level: int, entry: dict) -> None:
-    """Append une entrée de correction au fichier markdown.
+    """Append une entrée de correction aux deux stockages :
 
-    `entry` : dict avec date, scene, kind, rating, et autres champs libres.
-    Format de sortie : markdown lisible humain ET parseable GPT.
+    1. JSONL (source de vérité) : `data/corrections_n{level}.jsonl` —
+       1 entrée par ligne, embedding calculé à la volée et inclus, prêt
+       pour le RAG top-K à la prochaine génération.
+    2. Markdown (lisibilité humain + lecture par le `refine_prompt`) :
+       même contenu présenté en bloc YAML-front-matter.
+
+    `entry` doit contenir au minimum : date, scene, level, kind, rating.
+    Les autres champs (content, note, box_*, rating_label, etc.) sont
+    libres et passés tels quels.
     """
+    # 1. JSONL avec embedding (source canonique pour le RAG)
+    try:
+        append_correction_jsonl(level, dict(entry))  # copy pour ne pas polluer
+    except Exception as e:
+        print(f"[append_correction] JSONL write failed: {e}", file=sys.stderr)
+
+    # 2. Markdown lisible (pour humain + refine_prompt qui parse l'historique)
     p = CORRECTIONS_FILE[level]
     p.parent.mkdir(parents=True, exist_ok=True)
     block = ["---"]
     for k, v in entry.items():
         if v is None or v == "":
+            continue
+        # Ne pas dumper l'embedding (1536 floats) dans le markdown lisible
+        if k in ("embedding", "_embed_input"):
             continue
         sv = str(v).strip()
         if "\n" in sv:
@@ -100,6 +121,20 @@ def _scene_context(scene_id: str) -> dict:
         "level1_existing": meta.get("level1_questions", []),
         "quests_existing": meta.get("quests", []),
     }
+
+
+def _rag_block_for(query_text: str, level: int, k: int = 8) -> str:
+    """Construit le bloc RAG à injecter dans le system prompt : top-K
+    corrections sémantiquement similaires au `query_text`. Sans appel
+    réseau si le service d'embedding n'est pas configuré (fallback :
+    K plus récentes)."""
+    corrections = load_corrections(level)
+    if not corrections:
+        return "  (corpus de corrections encore vide — premier jet)"
+    qemb = embed_text(query_text)
+    top = find_top_k(qemb, corrections, k=k)
+    formatted = format_corrections_for_prompt(top)
+    return formatted or "  (aucune correction sémantiquement proche)"
 
 
 def _good_examples(meta_items: list[dict], level: int, limit: int = 6) -> str:
@@ -167,6 +202,13 @@ def generate_n1_questions(scene_id: str, count: int = 4) -> list[dict]:
     à `meta.level1_questions`. N'écrit PAS le meta — l'appelant le fait."""
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(1)
+    # Query RAG : on cherche les corrections passées les plus proches du
+    # contexte de la scène (catégorie + liste des cadres présents).
+    rag_query = (
+        f"{ctx['name']} {ctx['category']} questions observation "
+        f"{ctx['boxes_text']}"
+    )
+    rag_block = _rag_block_for(rag_query, level=1, k=8)
     prompt_filled = _fill_prompt(prompt_template, {
         "scene_context": (
             f"Module : {ctx['name']}\n"
@@ -174,15 +216,16 @@ def generate_n1_questions(scene_id: str, count: int = 4) -> list[dict]:
             f"Personnages présents ({ctx['n_boxes']}) :\n{ctx['boxes_text']}\n"
             f"Objectif : génère {count} question(s) QCM d'observation."
         ),
-        "good_examples": _good_examples(ctx["level1_existing"], level=1),
-        "bad_examples_notes": _bad_examples_notes(level=1),
+        "good_examples": rag_block,
+        "bad_examples_notes": rag_block,  # un seul bloc unifié good+bad via RAG
     })
     j = chat_json(
         messages=[
             {"role": "system", "content": prompt_filled},
-            {"role": "user", "content": f"Génère {count} questions différentes des exemples validés."},
+            {"role": "user", "content": f"Génère {count} questions différentes des corrections fournies."},
         ],
         max_completion_tokens=4000,
+        temperature=0.4,
         timeout=180,
     )
     questions = j.get("questions", [])
@@ -214,6 +257,8 @@ def generate_n2_quests(scene_id: str, count: int = 1,
     if per_box:
         count = max(1, ctx["n_boxes"])
     prompt_template = read_prompt(2)
+    rag_query = f"{ctx['name']} {ctx['category']} quête approche {ctx['boxes_text']}"
+    rag_block = _rag_block_for(rag_query, level=2, k=8)
     prompt_filled = _fill_prompt(prompt_template, {
         "scene_context": (
             f"Module : {ctx['name']}\n"
@@ -222,16 +267,17 @@ def generate_n2_quests(scene_id: str, count: int = 1,
             f"Objectif : génère {count} quête(s) d'approche commerciale"
             f" {'(une par cadre, en variant les angles d''approche)' if per_box else ''}."
         ),
-        "good_examples": _good_examples(ctx["quests_existing"], level=2),
-        "bad_examples_notes": _bad_examples_notes(level=2),
+        "good_examples": rag_block,
+        "bad_examples_notes": rag_block,
     })
     j = chat_json(
         messages=[
             {"role": "system", "content": prompt_filled},
             {"role": "user", "content":
-                f"Génère {count} quête(s) différente(s) des exemples validés."},
+                f"Génère {count} quête(s) différente(s) des corrections fournies."},
         ],
         max_completion_tokens=6000,
+        temperature=0.4,
         timeout=180,
     )
     quests = j.get("quests", [])
@@ -352,6 +398,13 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
     # Contexte injecté dans le prompt template
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(2)
+    # RAG : query sémantique = description du cadre + sujet + catégorie.
+    # Cherche les corrections passées qui parlent de PERSONNAGES SIMILAIRES.
+    rag_query = (
+        f"{target_box.get('subject','')} {box_descr} "
+        f"{ctx['category']} {ctx['name']}"
+    )
+    rag_block = _rag_block_for(rag_query, level=2, k=8)
     prompt_filled = _fill_prompt(prompt_template, {
         "scene_context": (
             f"Module : {ctx['name']}\n"
@@ -363,8 +416,8 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
             f"l'image fournie et la description ci-dessus. Le `box_id` à utiliser "
             f"dans le JSON est exactement : {box_id}"
         ),
-        "good_examples": _good_examples(ctx["quests_existing"], level=2),
-        "bad_examples_notes": _bad_examples_notes(level=2),
+        "good_examples": rag_block,
+        "bad_examples_notes": rag_block,
     })
 
     user_content = image_message_content(
@@ -382,6 +435,7 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
             {"role": "user", "content": user_content},
         ],
         max_completion_tokens=4000,
+        temperature=0.4,
         timeout=180,
     )
     quests = j.get("quests", [])
@@ -504,6 +558,123 @@ Ta tâche :
 Réponds UNIQUEMENT avec le nouveau prompt — pas de méta-commentaire,
 pas de "Voici le prompt :", pas de balise markdown. Juste le contenu.
 """
+
+
+def bootstrap_corpus(scene_ids: list[str] | None = None) -> dict:
+    """Transforme le corpus existant de chaque scène (questions N1 +
+    quêtes N2 déjà présentes dans meta.json) en entrées corrections
+    « good » par défaut — donne au RAG une base de référence positive
+    pour commencer à itérer dès le premier rating.
+
+    Stratégie :
+      - Pour chaque question N1 existante (non notée), append 1 entrée
+        correction kind=question, rating=good, content=text.
+      - Pour chaque quête N2 existante (non notée), 5 entrées :
+        - 1 sur le titre (field_title, good)
+        - 1 sur l'intro (field_intro, good)
+        - 4 sur chaque dialogue_choice (field_choice_text, good +
+          is_best correct)
+      - Skip les items déjà notés (≠ null) pour ne pas dupliquer.
+      - Marque chaque item rétro-notés avec _bootstrapped:True pour
+        éviter de les re-bootstrapper.
+
+    Renvoie un dict { scene_id: { n1_added, n2_added } } pour rapport
+    à l'éditeur.
+    """
+    if scene_ids is None:
+        scene_ids = [p.name for p in SCENES.iterdir() if p.is_dir() and (p / "meta.json").exists()]
+    report = {}
+    for sid in scene_ids:
+        meta_path = SCENES / sid / "meta.json"
+        if not meta_path.exists():
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        n1_added = 0; n2_added = 0
+        # N1
+        for q in meta.get("level1_questions", []):
+            if q.get("_bootstrapped") or q.get("_rating"):
+                continue
+            entry = {
+                "date": _now_iso_compat(),
+                "scene": sid,
+                "level": 1,
+                "kind": "question",
+                "rating": "good",
+                "rating_label": "Bootstrap initial — question conservée par l'auteur",
+                "content": q.get("text", ""),
+                "choices": " | ".join((q.get("choices") or [])),
+                "correct_index": q.get("correct_index", 0),
+                "explanation": q.get("explanation", ""),
+                "bootstrap": True,
+            }
+            append_correction(1, entry)
+            q["_bootstrapped"] = True
+            q["_rating"] = "good"
+            q["_note"] = "Bootstrap initial"
+            n1_added += 1
+        # N2
+        for quest in meta.get("quests", []):
+            if quest.get("_bootstrapped") or quest.get("_rating"):
+                continue
+            box_id = str(quest.get("box_id", ""))
+            box_obj = next((b for b in meta.get("boxes", []) if str(b.get("id")) == box_id), None)
+            box_subject = (box_obj or {}).get("subject", "") if box_obj else ""
+            box_description = (box_obj or {}).get("_description", "") if box_obj else ""
+            base_ctx = {
+                "date": _now_iso_compat(),
+                "scene": sid,
+                "level": 2,
+                "box_id": box_id,
+                "box_subject": box_subject,
+                "box_description": box_description,
+                "quest_title": quest.get("title", ""),
+                "intro_text": quest.get("intro_text", ""),
+                "bootstrap": True,
+            }
+            # title
+            append_correction(2, {
+                **base_ctx, "kind": "field_title", "rating": "good",
+                "rating_label": "Bootstrap initial — titre conservé par l'auteur",
+                "content": quest.get("title", ""),
+            })
+            # intro
+            append_correction(2, {
+                **base_ctx, "kind": "field_intro", "rating": "good",
+                "rating_label": "Bootstrap initial — intro conservée par l'auteur",
+                "content": quest.get("intro_text", ""),
+            })
+            # choix
+            for c in quest.get("dialogue_choices", []):
+                is_best = bool(c.get("is_best"))
+                label_text = ("Bootstrap — bonne accroche conservée"
+                              if is_best else "Bootstrap — bon distracteur conservé")
+                label_expl = ("Bootstrap — bonne explication du best conservée"
+                              if is_best else "Bootstrap — bonne explication du distracteur conservée")
+                append_correction(2, {
+                    **base_ctx, "kind": "field_choice_text", "rating": "good",
+                    "rating_label": label_text,
+                    "content": c.get("text", ""), "is_best": is_best,
+                })
+                if c.get("explanation"):
+                    append_correction(2, {
+                        **base_ctx, "kind": "field_choice_explain", "rating": "good",
+                        "rating_label": label_expl,
+                        "content": c.get("explanation", ""), "is_best": is_best,
+                    })
+            quest["_bootstrapped"] = True
+            quest["_rating"] = "good"
+            quest["_note"] = "Bootstrap initial"
+            n2_added += 1
+        # Sauve les flags _bootstrapped
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        report[sid] = {"n1_added": n1_added, "n2_added": n2_added}
+    return report
+
+
+def _now_iso_compat() -> str:
+    """Pour bootstrap : timestamp ISO compatible avec _now_iso() de server.py."""
+    import datetime
+    return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def refine_prompt(level: int) -> dict:

@@ -1033,6 +1033,22 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, _stop_tunnel())
             return
 
+        # Bootstrap du corpus : transforme chaque question/quête déjà
+        # présente dans les modules en entrées corrections "good" (avec
+        # embeddings), pour amorcer le RAG. Idempotent — skip les items
+        # déjà bootstrappés. Renvoie un rapport par scène.
+        if path == "/api/bootstrap-corpus":
+            payload = self._read_json() or {}
+            scene_ids = payload.get("scene_ids") or None
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from generate import bootstrap_corpus  # noqa
+                report = bootstrap_corpus(scene_ids)
+            except Exception as e:
+                self._send_json(500, {"error": f"bootstrap failed: {e}"}); return
+            self._send_json(200, {"report": report})
+            return
+
         # Refinement du prompt système (N1 ou N2) : GPT relit corrections
         # accumulées + prompt actuel → produit nouvelle version + archive.
         if path == "/api/refine-prompt":

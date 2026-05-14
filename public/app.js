@@ -2971,7 +2971,18 @@ $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
 $('bootstrap-corpus')?.addEventListener('click', async () => {
-  if (!confirm('Amorcer le corpus RAG ?\n\nToutes les questions N1 et quêtes N2 actuellement présentes dans les modules seront converties en entrées « good » dans corrections_n{1,2}.jsonl avec leurs embeddings.\n\nIdempotent : les items déjà bootstrappés sont ignorés.')) return;
+  if (!confirm(
+    'AMORÇAGE INITIAL DU CORPUS\n\n' +
+    'Cette action :\n' +
+    '• Marque toutes les questions N1 et quêtes N2 actuellement présentes dans tes modules comme exemples POSITIFS (good) dans le corpus de corrections.\n' +
+    '• Calcule un embedding par entrée et écrit dans corrections_n{1,2}.jsonl.\n\n' +
+    "C'est un point de départ. Par la suite, à chaque clic ★/✦/✗ dans Missions ou dans le quest-modal :\n" +
+    '• ★ → entrée GOOD enrichit les BONNES PRATIQUES\n' +
+    '• ✦ → entrée NUANCED enrichit les ANTI-PATTERNS (à nuancer)\n' +
+    '• ✗ → entrée REFUSED enrichit les ANTI-PATTERNS (à éviter)\n\n' +
+    'Le RAG injectera ensuite les deux types à chaque génération.\n\n' +
+    'Idempotent : les items déjà amorcés sont ignorés.'
+  )) return;
   showGptOverlay('Calcul des embeddings et écriture des corrections…');
   try {
     const r = await fetch('/api/bootstrap-corpus', {

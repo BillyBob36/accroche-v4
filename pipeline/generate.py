@@ -353,20 +353,23 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
 
     sys_msg = (
         "Tu es OBSERVATEUR FACTUEL d'une scène de boutique de luxe. Ton travail "
-        "est de décrire UNIQUEMENT ce que tu VOIS dans l'image fournie. "
+        "est de décrire UNIQUEMENT LE OU LES PERSONNAGES PRÉSENTS dans l'image. "
         "RÈGLES STRICTES :\n"
+        "  • NE DÉCRIS PAS le décor, le fond, le cadre, l'environnement, les "
+        "vitrines, le mobilier — uniquement le ou les personnages.\n"
+        "  • S'il y a plusieurs personnages, décris chacun séparément.\n"
         "  • N'INVENTE RIEN. Si un détail n'est pas visible (couleur, marque, "
-        "matière, expression), ne le mentionne pas.\n"
+        "matière), ne le mentionne pas.\n"
         "  • PAS d'interprétation psychologique. Interdit : « semble », « a "
         "l'air », « paraît ». Autorisé : « regarde vers », « tient à deux mains », "
         "« est orienté vers ».\n"
         "  • PAS d'adjectif vague. Interdit : « élégant », « distingué ». "
         "Autorisé : « manteau navy », « chignon bas », « ceinture nouée ».\n"
-        "  • Reste sous 80 mots, 3-4 phrases courtes max."
+        "  • Reste sous 100 mots par personnage, 3-5 phrases courtes max."
     )
     user_text = (
-        "Décris ce personnage avec un MAXIMUM de détails FACTUELS et VISIBLES. "
-        "Couvre dans cet ordre :\n"
+        "Décris le(s) personnage(s) avec un MAXIMUM de détails FACTUELS et "
+        "VISIBLES. Couvre dans cet ordre, par personnage :\n"
         "  1. Genre + âge approximatif (tranche de 10 ans)\n"
         "  2. VÊTEMENTS : haut, bas, manteau/veste, chaussures — précise "
         "matière apparente et couleurs.\n"
@@ -375,10 +378,15 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         "  4. CHEVEUX + ATTITUDE physique : longueur, couleur, coupe, "
         "posture du corps, position des mains, orientation du regard, geste "
         "en cours.\n"
-        "  5. ENVIRONNEMENT IMMÉDIAT (juste autour du personnage) : "
-        "comptoir, vitrine, objet tenu, contexte visible.\n"
-        "Si l'un de ces points n'est pas visible, OMETS-LE — ne devine pas. "
-        "Réponds en une seule réponse compacte, sans titres ni puces."
+        "  5. NIVEAU SOCIAL ESTIMÉ : termine par UNE phrase courte qui résume "
+        "la classe sociale apparente déduite de l'ENSEMBLE (qualité des "
+        "vêtements + soin + accessoires + posture). Utilise une catégorie "
+        "courte : « classe populaire », « classe moyenne », « classe moyenne "
+        "supérieure », « classe aisée », « classe très aisée », ou une nuance "
+        "intermédiaire. Préfixe par « Niveau social estimé : ».\n"
+        "Si un point (1 à 4) n'est pas visible, OMETS-LE — ne devine pas. "
+        "NE DÉCRIS PAS le décor ou le fond. Réponds en une seule réponse "
+        "compacte, sans titres ni puces."
     )
     sujet_txt = (target.get("subject") or "").strip()
     if sujet_txt:

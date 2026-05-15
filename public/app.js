@@ -1657,11 +1657,84 @@ function openQuestModal(boxId, idx = -1) {
   // est sélectionné.
   const genRow = $('qu-gen-row');
   genRow.style.display = (idx < 0 && sel.value) ? '' : 'none';
+  // Fiche client : populée dès qu'un cadre est sélectionné
+  refreshFicheClient(sel.value);
   sel.onchange = () => {
     genRow.style.display = (idx < 0 && sel.value) ? '' : 'none';
+    refreshFicheClient(sel.value);
   };
 
   $('quest-modal').classList.add('shown');
+}
+
+// Rafraîchit la fiche client (lecture seule) en haut du quest-modal à
+// partir de meta.boxes[bid]._analysis. Si pas d'analyse, propose un
+// CTA pour la générer.
+function refreshFicheClient(boxId) {
+  const container = $('qu-fiche-client');
+  const content = $('qu-fiche-content');
+  if (!container || !content) return;
+  if (!boxId) { container.style.display = 'none'; return; }
+  const box = (sceneState.meta?.boxes || []).find(b => String(b.id) === String(boxId));
+  if (!box) { container.style.display = 'none'; return; }
+  const analysis = box._analysis;
+  if (!analysis || !analysis.personnages?.length) {
+    container.style.display = 'block';
+    content.innerHTML = `
+      <div style="color:rgba(255,255,255,0.55);font-style:italic;margin-bottom:8px;">
+        Aucune analyse vision pour ce cadre.
+      </div>
+      <button class="btn" id="qu-fiche-generate" style="font-size:11px;padding:6px 12px;">
+        👁 Analyser ce cadre maintenant
+      </button>`;
+    $('qu-fiche-generate')?.addEventListener('click', async () => {
+      showGptOverlay('GPT-5.4 analyse le cadre…');
+      try {
+        const r = await fetch('/api/describe-boxes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ scene_ids: [sceneState.id], force: false }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await loadCurrentSceneMeta();
+        refreshFicheClient(boxId);
+      } catch (e) {
+        alert('Analyse échouée : ' + e.message);
+      } finally { hideGptOverlay(); }
+    });
+    return;
+  }
+  container.style.display = 'block';
+  const persosHtml = (analysis.personnages || []).map((p, i) => {
+    const sig = p.signaux || {};
+    return `
+      <div style="margin-top:${i>0?10:0}px;padding-top:${i>0?10:0}px;${i>0?'border-top:1px solid rgba(255,255,255,0.10);':''}">
+        <div style="font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:4px;">Personne ${i+1}${p.physique ? ' — ' + escapeHtmlAttr(p.physique) : ''}</div>
+        ${facetLine('Tenue', p.tenue)}
+        ${facetLine('Accessoires', p.accessoires)}
+        ${facetLine('Cheveux + attitude', p.cheveux_attitude)}
+        ${facetLine('Démarche', sig.demarche)}
+        ${facetLine('Regard', sig.regard)}
+        ${facetLine('Posture', sig.posture)}
+        ${facetLine('Mains', sig.mains)}
+        ${facetLine('Distance', sig.distance)}
+        ${facetLine('Accompagnement', p.accompagnement)}
+        ${facetLine('Indicateurs mission', p.indicateurs_mission)}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+          ${chip('Social', p.niveau_social_estime, 'rgba(212,184,122,0.95)')}
+          ${chip('DISC', p.disc_profile_estime, 'rgba(140,200,255,0.95)')}
+          ${chip('Code luxe', p.code_luxe_lu, 'rgba(180,240,180,0.95)')}
+        </div>
+      </div>`;
+  }).join('');
+  content.innerHTML = persosHtml || '<div style="color:rgba(255,255,255,0.55);font-style:italic;">Analyse vide.</div>';
+}
+function facetLine(label, value) {
+  if (!value || !String(value).trim()) return '';
+  return `<div style="margin-top:2px;"><span style="color:rgba(255,255,255,0.55);">${escapeHtmlAttr(label)} :</span> ${escapeHtmlAttr(value)}</div>`;
+}
+function chip(label, value, color) {
+  if (!value || !String(value).trim()) return '';
+  return `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,0.30);border:1px solid ${color};color:${color};padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:0.04em;">${escapeHtmlAttr(label)} : ${escapeHtmlAttr(value)}</span>`;
 }
 
 // Supprime les .field-rate-row + .field-rate-textarea qui suivent un
@@ -2383,7 +2456,74 @@ function enterCharacterEditor() {
   $('char-rect-info').textContent = 'Trace un cadre sur l\'image, puis peins la zone à modifier.';
   setCharMode('rect');
   $('status').textContent = 'Mode personnage — trace un cadre puis peins la zone';
+  // Charge le catalogue personas dans le dropdown (idempotent)
+  loadPersonasCatalog();
 }
+
+// =================== PERSONAS CATALOG =================================
+// Catalogue de personas clients luxe (8 profils). À la sélection, le
+// prompt textarea est pré-rempli avec une instruction structurée pour
+// gpt-image-2 qui transforme le personnage en ce profil-type.
+let _personasCache = null;
+async function loadPersonasCatalog() {
+  const sel = $('char-persona-select');
+  if (!sel || sel.options.length > 1) return;  // déjà rempli
+  try {
+    if (!_personasCache) {
+      const r = await fetch('/api/personas', { cache: 'force-cache' });
+      _personasCache = await r.json();
+    }
+    const personas = _personasCache?.personas || [];
+    personas.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.warn('personas load failed', e);
+  }
+}
+
+$('char-persona-select')?.addEventListener('change', () => {
+  const sel = $('char-persona-select');
+  const descEl = $('char-persona-desc');
+  const promptEl = $('char-prompt');
+  const pid = sel.value;
+  if (!pid) {
+    descEl.style.display = 'none';
+    return;
+  }
+  const personas = _personasCache?.personas || [];
+  const p = personas.find(x => x.id === pid);
+  if (!p) return;
+  // Affiche la fiche persona (lecture)
+  descEl.style.display = 'block';
+  descEl.innerHTML = `
+    <div style="font-weight:600;color:rgba(212,184,122,0.95);margin-bottom:4px;">${escapeHtmlAttr(p.name)}</div>
+    <div style="margin-bottom:4px;"><em>${escapeHtmlAttr(p.short)}</em></div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.55);">${escapeHtmlAttr(p.social_class)} · ${escapeHtmlAttr(p.disc_profile)}</div>
+  `;
+  // Pré-remplit le prompt avec une instruction structurée pour gpt-image-2
+  const v = p.visual || {};
+  const b = p.behavior || {};
+  const lines = [
+    `Transform the person(s) in the painted area into a "${p.name}" client persona.`,
+    `Keep the SAME framing, SAME pose orientation, SAME lighting and SAME location.`,
+    `Replace the wardrobe and accessories ONLY. Photographic style, no illustration.`,
+    ``,
+    `WARDROBE: ${v.wardrobe || ''}`,
+    `ACCESSORIES: ${v.accessories || ''}`,
+    `SHOES: ${v.shoes || ''}`,
+    `HAIR/SKIN: ${v.hair_skin || ''}`,
+    `AGE RANGE: ${v.age_range || ''}`,
+    ``,
+    `BEHAVIOR/POSTURE: ${b.posture || ''}, ${b.gaze || ''}, ${b.hands || ''}.`,
+    ``,
+    `IMPORTANT: keep the background, the boutique decor, lighting and other unpainted elements EXACTLY identical. Photorealistic, sharp focus on the person.`,
+  ].filter(l => l !== undefined);
+  promptEl.value = lines.join('\n');
+});
 
 function exitCharacterEditor() {
   setPhase('home');

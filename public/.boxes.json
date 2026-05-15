@@ -1,38 +1,47 @@
 [
   {
     "id": "1",
-    "x": 30,
-    "y": 220,
-    "w": 760.4370727539062,
-    "h": 1140.6556091308594,
+    "x": 727.217041015625,
+    "y": 377.9866180419922,
+    "w": 378.7191975911458,
+    "h": 568.0787963867188,
     "aspect": "2:3",
-    "subject": "L'homme d'affaires en costume gris à gauche examinant une bouteille."
-  },
-  {
-    "id": "2",
-    "x": 606.4227294921875,
-    "y": 285.70367431640625,
-    "w": 978.891845703125,
-    "h": 978.891845703125,
-    "aspect": "1:1",
-    "subject": "Le couple à la dégustation avec la sommelière."
+    "subject": " Le couple."
   },
   {
     "id": "3",
-    "x": 1610,
-    "y": 200,
-    "w": 380,
-    "h": 1100,
+    "x": 342.6376724243164,
+    "y": 446.1122131347656,
+    "w": 477.6109619140625,
+    "h": 716.4164428710938,
     "aspect": "2:3",
-    "subject": "La jeune femme en cachemire beige qui parcourt les bouteilles."
+    "subject": "La grand-mère et la vendeuse"
   },
   {
     "id": "4",
-    "x": 1711.3573710123696,
-    "y": 167.0360565185547,
-    "w": 848.6426289876302,
-    "h": 1272.9639434814453,
+    "x": 1155.748291015625,
+    "y": 305.4659118652344,
+    "w": 262.24656168619794,
+    "h": 393.3698425292969,
     "aspect": "2:3",
-    "subject": "Le monsieur âgé en blazer marine portant une caisse de vins."
+    "subject": "La Dame aux cheveux blancs Qui regarde vers la gauche."
+  },
+  {
+    "id": "5",
+    "x": 940.3839721679688,
+    "y": 547.7759399414062,
+    "w": 839.4817504882812,
+    "h": 839.4817504882812,
+    "aspect": "1:1",
+    "subject": "Les trois clients, la vendeuse et le bijou."
+  },
+  {
+    "id": "6",
+    "x": 1742.506591796875,
+    "y": 388.97447204589844,
+    "w": 353.0804748535156,
+    "h": 529.6207122802734,
+    "aspect": "2:3",
+    "subject": " cette femme."
   }
 ]

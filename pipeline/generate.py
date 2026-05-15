@@ -352,60 +352,94 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         return target.get("subject", "").strip() or "(aucune image ni description)"
 
     sys_msg = (
-        "Tu es OBSERVATEUR FACTUEL d'une scène de boutique de luxe. Ton travail "
-        "est de décrire UNIQUEMENT LE OU LES PERSONNAGES PRÉSENTS dans l'image. "
+        "Tu es OBSERVATEUR FACTUEL d'une scène de boutique de luxe. Tu produis "
+        "une ANALYSE STRUCTURÉE du ou des personnages visibles dans l'image. "
         "RÈGLES STRICTES :\n"
-        "  • NE DÉCRIS PAS le décor, le fond, le cadre, l'environnement, les "
-        "vitrines, le mobilier — uniquement le ou les personnages.\n"
-        "  • S'il y a plusieurs personnages, décris chacun séparément.\n"
-        "  • N'INVENTE RIEN. Si un détail n'est pas visible (couleur, marque, "
-        "matière), ne le mentionne pas.\n"
+        "  • NE DÉCRIS JAMAIS le décor, le fond, les vitrines, le mobilier — "
+        "uniquement les personnages.\n"
+        "  • S'il y a plusieurs personnages, produis une analyse PAR personnage "
+        "dans le tableau `personnages`.\n"
+        "  • N'INVENTE RIEN. Si un détail n'est pas visible, mets une chaîne "
+        "vide « » ou omets la clé.\n"
         "  • PAS d'interprétation psychologique. Interdit : « semble », « a "
-        "l'air », « paraît ». Autorisé : « regarde vers », « tient à deux mains », "
-        "« est orienté vers ».\n"
+        "l'air », « paraît ». Autorisé : « regarde vers », « tient à deux mains ».\n"
         "  • PAS d'adjectif vague. Interdit : « élégant », « distingué ». "
         "Autorisé : « manteau navy », « chignon bas », « ceinture nouée ».\n"
-        "  • Reste sous 100 mots par personnage, 3-5 phrases courtes max."
+        "  • Pour chaque dimension SIGNAUX (démarche, regard, posture, mains, "
+        "distance), reste sous 12 mots, factuel.\n"
+        "  • Pour `code_luxe_lu` : choisis UN mot parmi {discretion, "
+        "ostentation, neutre, intermediaire}.\n"
+        "  • Pour `disc_profile_estime` : un seul mot parmi {Dominant, "
+        "Influent, Stable, Conforme, inconnu}.\n"
+        "  • Pour `niveau_social_estime` : catégorie courte (classe populaire / "
+        "moyenne / moyenne supérieure / aisée / très aisée, ou nuance)."
     )
     user_text = (
-        "Décris le(s) personnage(s) avec un MAXIMUM de détails FACTUELS et "
-        "VISIBLES. Couvre dans cet ordre, par personnage :\n"
-        "  1. Genre + âge approximatif (tranche de 10 ans)\n"
-        "  2. VÊTEMENTS : haut, bas, manteau/veste, chaussures — précise "
-        "matière apparente et couleurs.\n"
-        "  3. ACCESSOIRES : sac, bijoux, lunettes, montre, chapeau, ceinture, "
-        "écharpe, bague — TOUT ce qui est visible.\n"
-        "  4. CHEVEUX + ATTITUDE physique : longueur, couleur, coupe, "
-        "posture du corps, position des mains, orientation du regard, geste "
-        "en cours.\n"
-        "  5. NIVEAU SOCIAL ESTIMÉ : termine par UNE phrase courte qui résume "
-        "la classe sociale apparente déduite de l'ENSEMBLE (qualité des "
-        "vêtements + soin + accessoires + posture). Utilise une catégorie "
-        "courte : « classe populaire », « classe moyenne », « classe moyenne "
-        "supérieure », « classe aisée », « classe très aisée », ou une nuance "
-        "intermédiaire. Préfixe par « Niveau social estimé : ».\n"
-        "Si un point (1 à 4) n'est pas visible, OMETS-LE — ne devine pas. "
-        "NE DÉCRIS PAS le décor ou le fond. Réponds en une seule réponse "
-        "compacte, sans titres ni puces."
+        "Renvoie un JSON STRICT avec cette structure :\n"
+        "{\n"
+        '  "personnages": [\n'
+        "    {\n"
+        '      "physique": "Genre + âge approximatif (10 ans)",\n'
+        '      "tenue": "Haut/bas/manteau/chaussures + matières + couleurs",\n'
+        '      "accessoires": "Sac, bijoux, lunettes, montre, ceinture, etc.",\n'
+        '      "cheveux_attitude": "Cheveux + posture corps + mains + regard",\n'
+        '      "signaux": {\n'
+        '        "demarche": "ex: lente exploratoire / rapide déterminée / hésitante",\n'
+        '        "regard": "ex: fixé sur la vitrine X / balaye la boutique",\n'
+        '        "posture": "ex: ouverte buste droit / fermée bras croisés",\n'
+        '        "mains": "ex: libres / tient sac / dans poche / téléphone",\n'
+        '        "distance": "ex: proche du comptoir / au seuil de la porte"\n'
+        "      },\n"
+        '      "accompagnement": "seul·e / accompagné·e (+ qui)",\n'
+        '      "indicateurs_mission": "ex: sac autre marque luxe visible / téléphone consulté / regarde montre",\n'
+        '      "niveau_social_estime": "classe aisée",\n'
+        '      "disc_profile_estime": "Stable",\n'
+        '      "code_luxe_lu": "discretion"\n'
+        "    }\n"
+        "  ],\n"
+        '  "resume_prose": "Une phrase compacte (< 80 mots/perso) qui résume tous les personnages factuellement, prête à être lue par un humain. Ne décris PAS le décor."\n'
+        "}\n\n"
+        "Couvre exhaustivement, et si un détail n'est pas visible, omets le champ "
+        "ou mets « » au lieu d'inventer. Limite : 100 mots max par personnage "
+        "dans `resume_prose`."
     )
     sujet_txt = (target.get("subject") or "").strip()
     if sujet_txt:
-        user_text += f"\n\nNote contextuelle (sujet annoté par l'auteur) : « {sujet_txt} ». À utiliser comme indice de cadrage uniquement, ne le recopie pas."
+        user_text += f"\n\nNote contextuelle (sujet annoté par l'auteur) : « {sujet_txt} ». À utiliser comme indice de cadrage, ne pas le recopier."
 
     content = image_message_content(
         text=user_text, image_path=str(img_path), detail="high",
     )
-    descr = chat_text(
+    analysis = chat_json(
         messages=[
             {"role": "system", "content": sys_msg},
             {"role": "user", "content": content},
         ],
-        max_completion_tokens=400,
+        max_completion_tokens=1200,
         temperature=0.2,
-        timeout=90,
-    ).strip()
-    # Cache la description dans meta
+        timeout=120,
+    )
+    # Fallback en cas de retour malformé
+    descr = (analysis.get("resume_prose") or "").strip()
+    if not descr and analysis.get("personnages"):
+        # On reconstruit un prose simple à partir des champs personnages
+        parts = []
+        for p in analysis.get("personnages", [])[:5]:
+            seg = " ".join(filter(None, [
+                p.get("physique", ""),
+                p.get("tenue", ""),
+                p.get("accessoires", ""),
+                p.get("cheveux_attitude", ""),
+                f"Niveau social estimé : {p.get('niveau_social_estime','')}." if p.get("niveau_social_estime") else "",
+            ]))
+            if seg.strip():
+                parts.append(seg.strip())
+        descr = " ".join(parts)
+    if not descr:
+        descr = "(analyse échouée — re-essayer plus tard)"
+    # Cache + structuré
     target["_description"] = descr
+    target["_analysis"] = analysis
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return descr
 
@@ -458,10 +492,18 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
     # Contexte injecté dans le prompt template
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(2)
-    # RAG : query sémantique = description du cadre + sujet + catégorie.
-    # Cherche les corrections passées qui parlent de PERSONNAGES SIMILAIRES.
+    # RAG : query sémantique = description du cadre + facettes structurées
+    # (niveau social + DISC + code luxe). Cherche les corrections passées
+    # qui parlent de personnages du MÊME TYPE socio-comportemental.
+    analysis = target_box.get("_analysis", {})
+    first_perso = (analysis.get("personnages") or [{}])[0]
+    facets_query = " ".join(filter(None, [
+        first_perso.get("niveau_social_estime"),
+        first_perso.get("disc_profile_estime"),
+        first_perso.get("code_luxe_lu"),
+    ]))
     rag_query = (
-        f"{target_box.get('subject','')} {box_descr} "
+        f"{facets_query} | {target_box.get('subject','')} | {box_descr} | "
         f"{ctx['category']} {ctx['name']}"
     )
     rag_block = _rag_block_for(rag_query, level=2, k=8)

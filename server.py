@@ -878,6 +878,21 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/share/status":
             self._send_json(200, _tunnel_status())
             return
+
+        # Catalogue de personas clients luxe (lecture seule).
+        # Servi tel quel depuis data/client_personas.json.
+        if path == "/api/personas":
+            personas_file = ROOT / "data" / "client_personas.json"
+            if not personas_file.exists():
+                self._send_json(404, {"error": "personas catalog not found"})
+                return
+            try:
+                data = json.loads(personas_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                self._send_json(500, {"error": f"personas parse: {e}"})
+                return
+            self._send_json(200, data)
+            return
         # Debug : agrège pour un cadre toutes les métadonnées du pipeline
         # lineart (geom + tailles RÉELLES de chaque PNG + chemin de chaque
         # artefact). Permet à debug.html de tout afficher d'un coup.
@@ -1277,6 +1292,15 @@ class Handler(SimpleHTTPRequestHandler):
                 box_description = (payload.get("box_description") or "").strip()
                 quest_title = (payload.get("quest_title") or "").strip()
                 intro_text = (payload.get("intro_text") or "").strip()
+                # Récupère les facettes structurées du cadre depuis meta.boxes
+                # (_analysis posé par describe_box) pour enrichir le contexte
+                # injecté dans les corrections (DISC + niveau social + code luxe
+                # → matches RAG plus précis sur la dimension client).
+                meta_now = _scene_meta(sid) or {}
+                box_obj = next((b for b in meta_now.get("boxes", [])
+                                if str(b.get("id")) == box_id), None)
+                analysis = (box_obj or {}).get("_analysis", {}) if box_obj else {}
+                first_perso = (analysis.get("personnages") or [{}])[0]
                 from pipeline.generate import append_correction  # noqa
                 base_entry = {
                     "scene": sid, "level": 2,
@@ -1285,6 +1309,9 @@ class Handler(SimpleHTTPRequestHandler):
                     "box_description": box_description,
                     "quest_title": quest_title,
                     "intro_text": intro_text,
+                    "niveau_social": first_perso.get("niveau_social_estime", ""),
+                    "disc_profile": first_perso.get("disc_profile_estime", ""),
+                    "code_luxe": first_perso.get("code_luxe_lu", ""),
                 }
                 def _entry(kind, *, content=None, is_best=None, rate_blob=None):
                     if not rate_blob or not rate_blob.get("rating"):

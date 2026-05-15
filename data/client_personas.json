@@ -1,0 +1,214 @@
+{
+  "version": "1.0",
+  "doc": "Catalogue de 8 personas clients luxe distinguables. Inspirés de Bain 'True-Luxury Consumer' + DISC + Robin Lent 'Selling Luxury'. Chacun est volontairement distinct VISUELLEMENT (vêtements, accessoires) ET comportementalement (posture, démarche) pour qu'une IA de vision puisse les distinguer sans ambiguïté.",
+  "personas": [
+    {
+      "id": "old_money",
+      "name": "Old Money — Vieille famille discrète",
+      "short": "Connaisseur·se installé·e, code luxe = discrétion absolue",
+      "social_class": "classe très aisée",
+      "disc_profile": "Conforme (C) — précis·e, mesuré·e",
+      "visual": {
+        "wardrobe": "Coupes parfaites, tissus nobles (cachemire, laine fine, soie). Aucun logo visible. Tons sourds : marine, taupe, ivoire, gris perle. Bas du jean ourlé main.",
+        "accessories": "Montre patinée vintage (héritage), perles fines, alliance simple, pas de sac à logo. Foulard en soie sobre, broche héritée.",
+        "shoes": "Mocassins, derbies ou escarpins cuir, légèrement patinés mais parfaitement cirés.",
+        "hair_skin": "Coiffure soignée mais pas extravagante. Soin de peau évident, pas de fond de teint.",
+        "age_range": "45-75 ans"
+      },
+      "behavior": {
+        "gait": "Démarche lente, posée, aucune hâte",
+        "gaze": "Regards calmes, ne balaye pas la boutique, sait ce qu'il/elle cherche",
+        "posture": "Buste droit, épaules détendues",
+        "hands": "Mains libres, jamais dans les poches"
+      },
+      "approach_principle": "DISCRÉTION ABSOLUE. Ne jamais flatter ouvertement. Référence érudite à un détail technique ouvre la conversation. Ce client connaît la maison depuis longtemps.",
+      "anti_patterns": [
+        "Ne pas dire 'cette pièce vous mettra en valeur' (déplacé)",
+        "Ne pas évoquer le prix",
+        "Ne pas insister sur la 'nouveauté'"
+      ]
+    },
+    {
+      "id": "new_money",
+      "name": "Nouveau riche ostentatoire",
+      "short": "Affirmation sociale, marque visible, accessoires statement",
+      "social_class": "classe aisée",
+      "disc_profile": "Dominant (D) — direct, va au but",
+      "visual": {
+        "wardrobe": "Logos visibles, monogrammes. Couleurs vives ou contrastées. Tissus brillants (cuir verni, satin). Coupes ajustées.",
+        "accessories": "Sac avec logo géant (Louis Vuitton, Gucci), grosse montre tape-à-l'œil (or, diamants), bijoux multiples voyants, ceinture à boucle marquée.",
+        "shoes": "Chaussures à logo visible, semelles brillantes, neuves.",
+        "hair_skin": "Coiffure travaillée (brushing, gel), bronzage marqué, manucure laquée colorée, parfum perceptible.",
+        "age_range": "30-50 ans"
+      },
+      "behavior": {
+        "gait": "Démarche assurée, presque arrogante, occupe l'espace",
+        "gaze": "Cherche le contact visuel, scanne pour qu'on le/la remarque",
+        "posture": "Épaules en arrière, menton relevé",
+        "hands": "Téléphone visible, sac porté avec ostentation"
+      },
+      "approach_principle": "RECONNAISSANCE. Saluer rapidement, complimenter UN accessoire fort (pas en bloc). Montrer la pièce phare la plus marquante. Argumenter exclusivité, edition limitée.",
+      "anti_patterns": [
+        "Ne pas commencer par les pièces classiques discrètes",
+        "Ne pas chuchoter — adopter une énergie soutenue",
+        "Ne pas être trop neutre — il/elle veut être vu·e"
+      ]
+    },
+    {
+      "id": "bobo_affluent",
+      "name": "Bobo affluent décontracté chic",
+      "short": "Casual premium, basics haut de gamme, anti-bling",
+      "social_class": "classe aisée",
+      "disc_profile": "Influent (I) — chaleureux, conversation",
+      "visual": {
+        "wardrobe": "Pull cachemire uni, jean designer brut, T-shirt blanc épais (qualité japonaise / italienne). Veste de tailleur déstructurée. Pas de logo visible.",
+        "accessories": "Sneakers premium (Common Projects, Veja, Golden Goose), tote bag en toile, montre simple en acier brossé, lunettes design, sac en cuir mou.",
+        "shoes": "Sneakers blanches premium ou bottines fines.",
+        "hair_skin": "Coiffure naturelle (effet 'pas coiffé'), peau lumineuse mais sans maquillage visible.",
+        "age_range": "30-45 ans"
+      },
+      "behavior": {
+        "gait": "Démarche détendue, exploratoire",
+        "gaze": "Curieux·se, regarde les détails matières et finitions",
+        "posture": "Décontractée, mains dans les poches possible",
+        "hands": "Touche les matières, tient un café take-away"
+      },
+      "approach_principle": "CONVERSATION HORIZONTALE. Engager sur le matériau, l'origine, la fabrication. Ton chaleureux mais expert. Anti-vente — facilitation.",
+      "anti_patterns": [
+        "Ne pas mettre en avant le prix",
+        "Ne pas pousser une marque ostentatoire",
+        "Ne pas être obséquieux — il/elle déteste"
+      ]
+    },
+    {
+      "id": "executive_busy",
+      "name": "Cadre supérieur·e pressé·e",
+      "short": "Costume travail, regard sur la montre, mission ciblée",
+      "social_class": "classe moyenne supérieure à aisée",
+      "disc_profile": "Dominant (D) — efficace, peu de patience",
+      "visual": {
+        "wardrobe": "Costume sombre (gris, navy) avec chemise blanche/bleu ciel. Talons pour les femmes. Cravate ou foulard discret. Tailleur impeccable.",
+        "accessories": "Montre fonctionnelle (Tag Heuer, Omega), porte-documents en cuir, alliance, lunettes de soleil sur la tête.",
+        "shoes": "Cuir noir / marron, sobres, professionnelles.",
+        "hair_skin": "Coiffure stricte, maquillage discret, ongles courts manucurés.",
+        "age_range": "35-55 ans"
+      },
+      "behavior": {
+        "gait": "Démarche rapide, déterminée",
+        "gaze": "Regarde la montre fréquemment, scan rapide de la boutique",
+        "posture": "Tendue, prête à partir",
+        "hands": "Téléphone à la main, lit ses notifs"
+      },
+      "approach_principle": "EFFICACITÉ. Aller droit au but. Proposer 2 options maximum. Anticiper les questions logistiques (livraison, gravure, taille). Respecter le tempo.",
+      "anti_patterns": [
+        "Ne pas raconter d'histoire longue sur la maison",
+        "Ne pas proposer de s'asseoir",
+        "Ne pas multiplier les options"
+      ]
+    },
+    {
+      "id": "habitue_senior",
+      "name": "Habitué·e senior — fidèle de la maison",
+      "short": "Client·e installé·e, soin extrême, attitude posée",
+      "social_class": "classe aisée installée",
+      "disc_profile": "Stable (S) — calme, attaché·e à la relation",
+      "visual": {
+        "wardrobe": "Tenue impeccable, classique, parfaitement assortie. Manteau de qualité, foulard en soie, gants en hiver. Tons doux ou pierres précieuses (émeraude, bordeaux).",
+        "accessories": "Bijoux classiques (perles, alliance, montre élégante datée), sac à main classique en cuir lisse, parapluie de marque.",
+        "shoes": "Escarpins ou mocassins cuir lisse, talon mid.",
+        "hair_skin": "Brushing parfait, manucure french, parfum classique présent mais discret.",
+        "age_range": "60-80 ans"
+      },
+      "behavior": {
+        "gait": "Démarche lente, posée, regarde où elle va",
+        "gaze": "Reconnaît le personnel, sourit",
+        "posture": "Droite, calme",
+        "hands": "Sac tenu fermement, gants éventuellement"
+      },
+      "approach_principle": "RELATION & RECONNAISSANCE. L'appeler par son nom si possible. Référence à un achat précédent. Prendre le temps. Proposer une chaise, un café/thé.",
+      "anti_patterns": [
+        "Ne pas la traiter comme une nouvelle cliente",
+        "Ne pas montrer de précipitation",
+        "Ne pas pousser une nouveauté tape-à-l'œil"
+      ]
+    },
+    {
+      "id": "tourist_curious",
+      "name": "Touriste curieux·se",
+      "short": "Visiteur·se en exploration, plusieurs sacs déjà",
+      "social_class": "classe moyenne à aisée (selon origine)",
+      "disc_profile": "Influent (I) — enthousiaste, sociable",
+      "visual": {
+        "wardrobe": "Tenue casual chic (chemise + jean ou robe d'été), confortable pour marcher. Pas de tenue de soirée.",
+        "accessories": "Sac à dos OU sacs d'autres maisons luxe déjà achetés (Dior, Chanel, Cartier visibles), appareil photo / téléphone constamment sorti, lunettes de soleil, plan de la ville.",
+        "shoes": "Sneakers ou ballerines confortables pour marcher.",
+        "hair_skin": "Décoiffé·e par le vent / la marche, joues colorées par l'extérieur.",
+        "age_range": "25-60 ans"
+      },
+      "behavior": {
+        "gait": "Démarche curieuse, s'arrête souvent",
+        "gaze": "Balaye toute la boutique, prend des photos",
+        "posture": "Étonné·e, lève la tête vers les décors",
+        "hands": "Téléphone pour photos, fait des selfies"
+      },
+      "approach_principle": "HOSPITALITÉ & FIERTÉ MAISON. Accueillir chaleureusement, raconter UN détail iconique de la maison. Proposer la version exclusive 'boutique [ville]' s'il y en a. Anticiper la détaxe.",
+      "anti_patterns": [
+        "Ne pas être froid·e sous prétexte qu'il/elle ne ressemble pas au client habituel",
+        "Ne pas négliger — un touriste peut acheter beaucoup",
+        "Ne pas oublier de proposer la détaxe / livraison hôtel"
+      ]
+    },
+    {
+      "id": "connoisseur_discreet",
+      "name": "Connaisseur·se discret·ète — érudit·e budget moyen",
+      "short": "Passionné·e qui connaît la maison, budget mid-range, regarde les détails",
+      "social_class": "classe moyenne supérieure",
+      "disc_profile": "Conforme (C) — méthodique, pose des questions techniques",
+      "visual": {
+        "wardrobe": "Tenue soignée mais mid-range. Vêtements de qualité moyenne portés avec soin. Pas de logo voyant.",
+        "accessories": "Lunettes (souvent), carnet ou téléphone pour prendre des notes, sac discret, montre fonctionnelle.",
+        "shoes": "Chaussures propres mais pas neuves, marques accessibles.",
+        "hair_skin": "Naturel·le, peu apprêté·e.",
+        "age_range": "30-65 ans"
+      },
+      "behavior": {
+        "gait": "Démarche attentive, s'arrête longuement devant les pièces",
+        "gaze": "Examine les détails (couture, gravure, poinçon), lit les étiquettes",
+        "posture": "Penché·e, observateur·rice",
+        "hands": "Touche prudemment, lunettes baissées pour voir"
+      },
+      "approach_principle": "ÉRUDITION PARTAGÉE. Parler technique : provenance, savoir-faire, héritage. Ne pas pousser le prix — c'est secondaire. Reconnaître son expertise.",
+      "anti_patterns": [
+        "Ne pas le/la traiter comme un·e novice",
+        "Ne pas chercher à vendre la pièce la plus chère",
+        "Ne pas réciter le discours marketing standard"
+      ]
+    },
+    {
+      "id": "aspirational_young",
+      "name": "Aspirational jeune — premier achat luxe",
+      "short": "Premier seuil luxe, intimidé·e, sourire crispé, démarche prudente",
+      "social_class": "classe moyenne avec ambition",
+      "disc_profile": "Stable (S) — réservé·e, prudent·e",
+      "visual": {
+        "wardrobe": "Tenue jeune, mix high-street + une pièce 'investissement' (basket premium ou sac de marque accessible). Souvent en groupe d'ami·e·s.",
+        "accessories": "Sac à dos, sneakers, écouteurs sans fil visibles, téléphone récent. Premier bijou délicat éventuellement.",
+        "shoes": "Sneakers récentes mais pas premium luxe.",
+        "hair_skin": "Naturel·le, parfois tendance Gen Z/Millennials (couleur, piercing discret).",
+        "age_range": "20-30 ans"
+      },
+      "behavior": {
+        "gait": "Démarche hésitante, prudente",
+        "gaze": "Regarde les prix discrètement, évite le contact direct",
+        "posture": "Bras croisés, épaules tendues",
+        "hands": "Garde son sac proche, ne touche rien d'office"
+      },
+      "approach_principle": "RÉASSURANCE & ACCESSIBILITÉ. Sourire sincère, attitude inclusive. Présenter les pièces 'entrée de gamme' sans condescendance. Expliquer la transmission, l'investissement.",
+      "anti_patterns": [
+        "Ne pas survoler du regard pour évaluer son budget",
+        "Ne pas être condescendant·e",
+        "Ne pas pousser hors budget — il/elle reviendra plus tard"
+      ]
+    }
+  ]
+}

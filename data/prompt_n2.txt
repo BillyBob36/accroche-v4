@@ -1,41 +1,72 @@
-Tu génères des mini-quêtes d'approche commerciale luxe. Chaque quête place
-le joueur face à UN client (cadre photographié) et lui demande de choisir
-la meilleure phrase d'approche parmi 4 options.
+Tu génères des mini-quêtes d'approche commerciale en boutique de luxe.
+Chaque quête place le joueur (vendeur·se) face à UN client photographié,
+et lui demande de choisir la meilleure phrase d'approche parmi 4 options.
+
+## CODES DU LUXE (Robin Lent — Selling Luxury)
+Trois principes non négociables qui définissent une « bonne approche » :
+- DISCRÉTION : ne jamais évoquer le prix en premier. Jamais dire « c'est
+  pour offrir ? ». Jamais survoler le client du regard pour évaluer son
+  budget. La distance physique est un signe de respect.
+- ÉRUDITION : le vendeur en sait plus que le client SANS le montrer. Une
+  référence subtile à un détail technique (matière, provenance, savoir-
+  faire) crée la connexion expert sans la condescendance.
+- ANTICIPATION : préparer le service avant la demande (sortir l'écrin
+  avant le « oui », proposer la boisson adaptée au profil pressenti).
+
+## 5 ANTI-PATTERNS ABSOLUS pour le `is_best` choice
+Ces phrases sont INTERDITES comme meilleure approche :
+1. « Bonjour, puis-je vous aider ? » → déclenche le réflexe de retrait.
+2. « Je vous laisse regarder, faites-moi signe si besoin. » → trop
+   effacé, abandon de la relation.
+3. « C'est notre nouvelle collection. » → mise en avant produit avant
+   contact humain.
+4. « C'est pour offrir ? » → présume le motif et ferme la conversation.
+5. « Vous cherchez quelque chose en particulier ? » → variante de 1,
+   réflexe « non merci, je regarde ».
+Tous ces fragments peuvent en revanche être de TRÈS BONS distracteurs.
 
 ## RÈGLES DE FORME (toujours appliquées)
-- `title` : 3-5 mots, nominal, descriptif (« La grand-mère », « Le couple
-  hésitant »). PAS d'adjectifs creux (« charmant », « élégant »).
-- `intro_text` : 1-2 phrases, < 40 mots, décrit CE QUE LE CLIENT FAIT
-  À CET INSTANT et son signal non-verbal (regard, posture, geste, main).
-  INTERDIT : « semble intéressé », « paraît hésiter » — phrases plates.
-  PRÉFÉRER : verbe d'action concret (« observe », « se penche sur »,
-  « tient à deux mains »).
-- 4 `dialogue_choices` : 1 best + 3 distracteurs plausibles. Chaque
-  `text` est une phrase prononcée par le vendeur, < 30 mots, ton oral
-  naturel. Chaque `explanation` < 50 mots, finit par le PRINCIPE
-  pédagogique révélé.
+- `title` : 3-5 mots, nominal, descriptif factuel basé sur ce que le
+  vendeur voit (« Le couple hésitant », « La grand-mère en manteau
+  beige »). PAS d'adjectif vague (« charmant », « élégant »).
+- `intro_text` : 1-2 phrases (< 40 mots) qui posent CE QUE LE CLIENT FAIT
+  À CET INSTANT et son SIGNAL non-verbal (regard, posture, geste, main).
+  Verbe d'action concret : « observe », « se penche sur », « tient à
+  deux mains ». Interdit : « semble », « paraît », « a l'air ».
+- 4 `dialogue_choices` exactement : 1 best + 3 distracteurs. Chaque
+  `text` < 30 mots, ton oral naturel, phrase prononcée par le vendeur.
+  Chaque `explanation` < 60 mots, finit par le PRINCIPE pédagogique
+  révélé (« le compliment authentique ouvre sans pression »).
+- Distracteurs PLAUSIBLES (un débutant pourrait les choisir), chacun
+  incarnant UN défaut différent parmi : trop direct, trop générique,
+  trop commercial, trop effacé.
 
-## RÈGLES DE FOND
-- L'approche optimale en luxe est CONTEXTUELLE (basée sur ce que le
-  client regarde / tient / a posé sur le comptoir), RESPECTUEUSE (laisse
-  une porte ouverte, ne ferme pas), et HUMAINE (compliment authentique
-  > argumentaire produit).
-- INTERDIT comme best : « Bonjour, puis-je vous aider ? », « Je vous
-  laisse regarder », « C'est notre nouvelle collection », « C'est pour
-  offrir ? ». Ces phrases déclenchent réflexe de retrait.
-- Les MAUVAIS choix (distracteurs) doivent ÊTRE PLAUSIBLES mais subtilement
-  contre-productifs : trop direct, trop générique, trop commercial, trop
-  effacé. Chaque distracteur incarne UN défaut différent.
-- Toujours utiliser le `box_id` fourni dans le contexte ; ne pas en
-  inventer.
+## RÈGLES DE FOND (ce qui distingue un BEST choice)
+- Le `is_best` part TOUJOURS de ce que le client REGARDE ou TIENT
+  visiblement (ancrage contextuel concret).
+- Il OFFRE un choix au client (n'enferme pas la décision).
+- Il signale la disponibilité sans pression.
+- Il respecte le NIVEAU SOCIAL et le PROFIL DISC perceptibles dans
+  l'image (un client Old Money n'accepte pas le même ton qu'un
+  Nouveau Riche).
+- Pour les profils visibles via l'analyse de cadre :
+  - **Classe très aisée / Old Money** → discrétion absolue, érudition
+    subtile, jamais flatter ouvertement.
+  - **Nouveau riche** → reconnaissance, énergie soutenue, exclusivité.
+  - **Bobo affluent** → conversation horizontale sur la fabrication.
+  - **Cadre pressé** → efficacité, 2 options max.
+  - **Habitué·e senior** → relation, reconnaissance, prendre le temps.
+  - **Touriste curieux** → hospitalité, fierté maison.
+  - **Connaisseur érudit** → technique, ne pas réciter le marketing.
+  - **Aspirational jeune** → réassurance, sans condescendance.
 
 ## CONTEXTE DE LA SCÈNE
 {scene_context}
 
-## CORPUS DE RÉFÉRENCE (corrections passées + bootstrap)
+## CORPUS RAG (corrections passées les plus proches du contexte courant)
 {good_examples}
 
-## Schema JSON strict (réponds UNIQUEMENT avec cet objet)
+## Schema JSON strict — réponds UNIQUEMENT avec cet objet
 {
   "quests": [
     {

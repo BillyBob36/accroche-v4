@@ -1720,6 +1720,13 @@
 </div>
 
 <div id="character-panel">
+  <div style="margin-bottom:10px;">
+    <div class="field-label">Persona client (transforme la zone peinte en un profil-type)</div>
+    <select id="char-persona-select" style="width:100%;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px;font-family:inherit;font-size:12px;">
+      <option value="">— Optionnel : choisir un persona —</option>
+    </select>
+    <div id="char-persona-desc" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(212,184,122,0.06);border-left:3px solid rgba(212,184,122,0.45);border-radius:4px;font-size:11px;color:rgba(255,255,255,0.75);line-height:1.4;"></div>
+  </div>
   <div>
     <div class="field-label">Prompt — décris ce que tu veux dans la zone peinte</div>
     <textarea id="char-prompt" placeholder="ex: replace the bottle with a dark green wine bottle, gold label, soft warm lighting, photorealistic"></textarea>
@@ -1832,6 +1839,16 @@
       <select id="qu-box" style="width:100%;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px;font-family:inherit;font-size:12px;">
         <option value="">— Choisir un cadre —</option>
       </select>
+    </div>
+
+    <!-- Fiche client : analyse vision du cadre associé. Apparaît dès
+         qu'un cadre est sélectionné. Lecture seule — informe l'auteur
+         sur la perception GPT du personnage (signaux, niveau social,
+         DISC, code luxe) pour qu'il puisse juger si l'approche
+         commerciale proposée est cohérente. -->
+    <div id="qu-fiche-client" style="display:none;margin:10px 0 14px;padding:14px;background:rgba(80,180,255,0.06);border:1px solid rgba(80,180,255,0.30);border-radius:8px;font-size:11px;color:rgba(255,255,255,0.85);">
+      <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(140,200,255,0.95);margin-bottom:8px;font-weight:600;">Fiche client (analyse vision)</div>
+      <div id="qu-fiche-content" style="line-height:1.5;"></div>
     </div>
 
     <!-- Bandeau de génération assistée : apparaît dès qu'un cadre est

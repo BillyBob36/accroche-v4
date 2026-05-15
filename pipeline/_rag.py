@@ -136,11 +136,21 @@ def append_correction_jsonl(level: int, entry: dict) -> None:
 
 def _build_embed_input(entry: dict) -> str:
     """Combine les champs sémantiquement utiles d'une entrée correction en
-    une chaîne unique servant d'input à l'embedding."""
+    une chaîne unique servant d'input à l'embedding.
+
+    Inclut les facettes client (niveau social, DISC, code luxe) pour que
+    les matches RAG soient calibrés sur la TYPOLOGIE de client autant que
+    sur le contenu textuel."""
     parts = []
+    # Facettes structurées (les plus discriminantes pour le matching client)
+    for k in ("niveau_social", "disc_profile", "code_luxe"):
+        v = entry.get(k)
+        if v: parts.append(f"{k}: {v}")
+    # Description du cadre (vision factuelle)
     for k in ("box_subject", "box_description"):
         v = entry.get(k)
         if v: parts.append(str(v))
+    # Contenu du champ noté
     for k in ("question", "quest_title", "intro_text", "content", "answer", "explanation"):
         v = entry.get(k)
         if v: parts.append(str(v))
@@ -199,7 +209,16 @@ def format_corrections_for_prompt(corrections: list[dict], header: str = "") -> 
         box_descr = c.get("box_description", "")
         box_subj = c.get("box_subject", "")
         box_lbl = box_descr or box_subj or ""
+        # Facettes structurées éventuellement disponibles (analyse cadre)
+        niveau_social = c.get("niveau_social", "")
+        disc_profile = c.get("disc_profile", "")
+        code_luxe = c.get("code_luxe", "")
+        facets = []
+        if niveau_social: facets.append(f"social: {niveau_social}")
+        if disc_profile: facets.append(f"DISC: {disc_profile}")
+        if code_luxe: facets.append(f"code-luxe: {code_luxe}")
         line_parts = []
+        if facets: line_parts.append(f"[{' · '.join(facets)}]")
         if box_lbl: line_parts.append(f"[cadre: {box_lbl[:240]}]")
         if kind: line_parts.append(f"[{kind}]")
         if content: line_parts.append(f'"{content[:200]}"')

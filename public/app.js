@@ -2504,24 +2504,30 @@ $('char-persona-select')?.addEventListener('change', () => {
     <div style="margin-bottom:4px;"><em>${escapeHtmlAttr(p.short)}</em></div>
     <div style="font-size:10px;color:rgba(255,255,255,0.55);">${escapeHtmlAttr(p.social_class)} · ${escapeHtmlAttr(p.disc_profile)}</div>
   `;
-  // Pré-remplit le prompt avec une instruction structurée pour gpt-image-2
+  // Pré-remplit le prompt — édition VESTIMENTAIRE PURE qui préserve
+  // strictement la silhouette, la pose, la hauteur, les proportions du
+  // corps. Ne rien dire sur la posture/regard/comportement (ça forcerait
+  // gpt-image-2 à régénérer une nouvelle silhouette).
   const v = p.visual || {};
-  const b = p.behavior || {};
   const lines = [
-    `Transform the person(s) in the painted area into a "${p.name}" client persona.`,
-    `Keep the SAME framing, SAME pose orientation, SAME lighting and SAME location.`,
-    `Replace the wardrobe and accessories ONLY. Photographic style, no illustration.`,
+    `TASK: This is a STRICT WARDROBE EDIT inside the painted mask. You must NOT change the person's body proportions, pose, gesture, head position, shoulder width, arm length, leg length, or overall silhouette. Treat this as repainting the clothing onto the SAME body in the SAME pose.`,
     ``,
-    `WARDROBE: ${v.wardrobe || ''}`,
-    `ACCESSORIES: ${v.accessories || ''}`,
-    `SHOES: ${v.shoes || ''}`,
-    `HAIR/SKIN: ${v.hair_skin || ''}`,
-    `AGE RANGE: ${v.age_range || ''}`,
+    `Render the CLOTHING and ACCESSORIES of the person to match this persona:`,
+    `· PERSONA: ${p.name} (${p.social_class})`,
+    `· TOP/JACKET/COAT: ${v.wardrobe || ''}`,
+    `· ACCESSORIES: ${v.accessories || ''}`,
+    `· SHOES: ${v.shoes || ''}`,
+    `· HAIR/SKIN style allowed: ${v.hair_skin || ''}`,
     ``,
-    `BEHAVIOR/POSTURE: ${b.posture || ''}, ${b.gaze || ''}, ${b.hands || ''}.`,
+    `MUST PRESERVE EXACTLY:`,
+    `· Person's overall height, body proportions (head/torso/legs ratios)`,
+    `· Pose, gesture, hand position, arm position, leg position, shoulder line`,
+    `· Head size, head position, face orientation, gaze direction`,
+    `· Background, boutique decor, lighting, color temperature of the scene`,
+    `· Floor, walls, doors, other people, fixtures — IDENTICAL to original`,
     ``,
-    `IMPORTANT: keep the background, the boutique decor, lighting and other unpainted elements EXACTLY identical. Photorealistic, sharp focus on the person.`,
-  ].filter(l => l !== undefined);
+    `STYLE: photorealistic editorial photo, sharp focus, natural daylight or boutique ambient lighting matching the original. NO illustration, NO 3D render look, NO oversaturated or "AI-generated" appearance. The clothing must drape and crumple realistically over the EXISTING body silhouette visible in the unmasked outline.`,
+  ];
   promptEl.value = lines.join('\n');
 });
 

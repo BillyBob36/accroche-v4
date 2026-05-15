@@ -61,7 +61,7 @@ def auth_headers(cfg: dict) -> dict:
     return {"api-key": cfg["api_key"]}
 
 
-def post_json(url: str, payload: dict, headers: dict, max_retries: int = 3) -> dict:
+def post_json(url: str, payload: dict, headers: dict, max_retries: int = 6) -> dict:
     body = json.dumps(payload).encode("utf-8")
     headers = {**headers, "Content-Type": "application/json"}
     return _request_with_retry(url, body, headers, max_retries)
@@ -69,7 +69,7 @@ def post_json(url: str, payload: dict, headers: dict, max_retries: int = 3) -> d
 
 def post_multipart(
     url: str, fields: list[tuple[str, str]], files: list[tuple[str, Path]],
-    headers: dict, max_retries: int = 3,
+    headers: dict, max_retries: int = 6,
 ) -> dict:
     """fields: [(name, value), ...]. files: [(name, path), ...]. name can repeat (e.g. multiple 'image' parts)."""
     boundary = f"----formboundary{uuid.uuid4().hex}"
@@ -108,14 +108,22 @@ def _request_with_retry(url: str, body: bytes, headers: dict, max_retries: int) 
         except error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
             if e.code == 429:
-                retry_after = int(e.headers.get("Retry-After", "6"))
-                print(f"[rate-limit] 429, sleeping {retry_after}s (attempt {attempt+1}/{max_retries})",
+                # Respect Retry-After header if present, otherwise apply
+                # exponential backoff capped at 90s (avoid pathological waits).
+                # Many Azure deployments use a 60s sliding window for
+                # rate-limits, so a single 60s wait is usually enough to clear.
+                hdr = e.headers.get("Retry-After")
+                if hdr and hdr.isdigit():
+                    wait = int(hdr)
+                else:
+                    wait = min(6 * (2 ** attempt), 90)
+                print(f"[rate-limit] 429, sleeping {wait}s (attempt {attempt+1}/{max_retries})",
                       file=sys.stderr)
-                time.sleep(retry_after)
+                time.sleep(wait)
                 last_err = e
                 continue
             if 500 <= e.code < 600 and attempt < max_retries - 1:
-                wait = 2 ** attempt
+                wait = min(2 ** attempt, 30)
                 print(f"[server-error] {e.code}, retrying in {wait}s", file=sys.stderr)
                 time.sleep(wait)
                 last_err = e
@@ -124,7 +132,9 @@ def _request_with_retry(url: str, body: bytes, headers: dict, max_retries: int) 
         except error.URLError as e:
             last_err = e
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
+                wait = min(2 ** attempt, 30)
+                print(f"[network] {e}, retrying in {wait}s", file=sys.stderr)
+                time.sleep(wait)
                 continue
             die(f"Network error: {e}")
     die(f"Exhausted retries: {last_err}")

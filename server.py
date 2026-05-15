@@ -1033,6 +1033,29 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, _stop_tunnel())
             return
 
+        # Régénère les descriptions vision factuelles de TOUS les cadres
+        # d'une scène (ou de toutes les scènes si scene_ids omis).
+        # Body : { scene_ids?: [string], force?: bool }
+        if path == "/api/describe-boxes":
+            payload = self._read_json() or {}
+            sids = payload.get("scene_ids")
+            force = bool(payload.get("force", False))
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from generate import describe_all_boxes  # noqa
+                if not sids:
+                    sids = [p.name for p in SCENES_DIR.iterdir() if p.is_dir() and (p / "meta.json").exists()]
+                report = {}
+                for sid in sids:
+                    try:
+                        report[sid] = describe_all_boxes(sid, force=force)
+                    except Exception as e:
+                        report[sid] = {"error": str(e)}
+            except Exception as e:
+                self._send_json(500, {"error": f"describe failed: {e}"}); return
+            self._send_json(200, {"report": report})
+            return
+
         # Bootstrap du corpus : transforme chaque question/quête déjà
         # présente dans les modules en entrées corrections "good" (avec
         # embeddings), pour amorcer le RAG. Idempotent — skip les items

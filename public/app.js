@@ -2970,6 +2970,35 @@ $('gen-n2')?.addEventListener('click', () => doGenerate(2));
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
+$('describe-boxes')?.addEventListener('click', async () => {
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  const force = confirm(
+    'RÉ-DÉCRIRE LES CADRES (vision)\n\n' +
+    'GPT-5.4 va regarder l\'image de chaque cadre et écrire une description ' +
+    'factuelle MAX-DÉTAIL (vêtements, accessoires, posture, regard) sans rien ' +
+    'inventer. Ces descriptions deviennent le label [cadre: …] dans le corpus RAG.\n\n' +
+    'OK = FORCE la régénération (écrase les descriptions existantes).\n' +
+    'Annuler = ne calcule que les cadres SANS description.'
+  );
+  showGptOverlay('Vision en cours sur chaque cadre…');
+  try {
+    const r = await fetch('/api/describe-boxes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ scene_ids: [sceneState.id], force }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const rep = j.report?.[sceneState.id] || {};
+    const lines = Object.entries(rep).map(([bid, d]) =>
+      `· Cadre ${bid} : ${String(d).slice(0, 100)}…`).join('\n');
+    alert('✓ Descriptions générées\n\n' + (lines || '(aucun cadre)'));
+  } catch (e) {
+    alert('Échec : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
+
 $('bootstrap-corpus')?.addEventListener('click', async () => {
   if (!confirm(
     'AMORÇAGE INITIAL DU CORPUS\n\n' +

@@ -311,15 +311,25 @@ def generate_n2_quests(scene_id: str, count: int = 1,
 
 # ----------------- Description d'un cadre via vision -----------------
 
-def describe_box(scene_id: str, box_id: str) -> str:
-    """Demande à GPT-5.4 (vision) de décrire en 2-3 phrases le personnage
-    et son contexte visible dans le cadre. Stocké dans meta.boxes[i]._description
-    pour ne pas refaire la vision à chaque génération de quête. Si la
-    description existe déjà, on la retourne directement.
+def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
+    """Demande à GPT-5.4 (vision) de décrire DE FAÇON FACTUELLE et
+    DÉTAILLÉE le personnage visible dans le cadre. La description est
+    stockée dans meta.boxes[i]._description (cache).
 
-    Cherche l'image dans cet ordre :
-      1. scenes/<sid>/exp3/imageB/box-<id>.jpg (perso + bokeh, idéal)
+    Si force=True, la description est recalculée même si en cache (utile
+    après une régénération d'image B/C ou après un upgrade du prompt).
+
+    Image source par ordre de préférence :
+      1. scenes/<sid>/exp3/imageB/box-<id>.jpg (perso + bokeh, l'idéal)
       2. scenes/<sid>/crops/box-<id>-input.png (crop master brut)
+
+    Le prompt impose à GPT de :
+      - Ne rien inventer (« si tu ne vois pas, ne dis rien »)
+      - Décrire SEULEMENT ce qui est visible (vêtements, accessoires,
+        posture, regard, geste, environnement immédiat)
+      - Pas d'interprétation psychologique (« semble intéressé », « a
+        l'air pressé ») — uniquement les SIGNAUX visibles
+      - Reste sous 4 phrases / 80 mots pour éviter les inflations
     """
     base = SCENES / scene_id
     meta_path = base / "meta.json"
@@ -329,7 +339,7 @@ def describe_box(scene_id: str, box_id: str) -> str:
     if not target:
         raise RuntimeError(f"Cadre {box_id} introuvable dans la scène {scene_id}")
     # Cache hit ?
-    if target.get("_description"):
+    if target.get("_description") and not force:
         return target["_description"]
     # Trouve l'image
     img_candidates = [
@@ -340,30 +350,72 @@ def describe_box(scene_id: str, box_id: str) -> str:
     if not img_path:
         # Pas d'image dispo : on retombe sur le sujet textuel
         return target.get("subject", "").strip() or "(aucune image ni description)"
+
+    sys_msg = (
+        "Tu es OBSERVATEUR FACTUEL d'une scène de boutique de luxe. Ton travail "
+        "est de décrire UNIQUEMENT ce que tu VOIS dans l'image fournie. "
+        "RÈGLES STRICTES :\n"
+        "  • N'INVENTE RIEN. Si un détail n'est pas visible (couleur, marque, "
+        "matière, expression), ne le mentionne pas.\n"
+        "  • PAS d'interprétation psychologique. Interdit : « semble », « a "
+        "l'air », « paraît ». Autorisé : « regarde vers », « tient à deux mains », "
+        "« est orienté vers ».\n"
+        "  • PAS d'adjectif vague. Interdit : « élégant », « distingué ». "
+        "Autorisé : « manteau navy », « chignon bas », « ceinture nouée ».\n"
+        "  • Reste sous 80 mots, 3-4 phrases courtes max."
+    )
+    user_text = (
+        "Décris ce personnage avec un MAXIMUM de détails FACTUELS et VISIBLES. "
+        "Couvre dans cet ordre :\n"
+        "  1. Genre + âge approximatif (tranche de 10 ans)\n"
+        "  2. VÊTEMENTS : haut, bas, manteau/veste, chaussures — précise "
+        "matière apparente et couleurs.\n"
+        "  3. ACCESSOIRES : sac, bijoux, lunettes, montre, chapeau, ceinture, "
+        "écharpe, bague — TOUT ce qui est visible.\n"
+        "  4. CHEVEUX + ATTITUDE physique : longueur, couleur, coupe, "
+        "posture du corps, position des mains, orientation du regard, geste "
+        "en cours.\n"
+        "  5. ENVIRONNEMENT IMMÉDIAT (juste autour du personnage) : "
+        "comptoir, vitrine, objet tenu, contexte visible.\n"
+        "Si l'un de ces points n'est pas visible, OMETS-LE — ne devine pas. "
+        "Réponds en une seule réponse compacte, sans titres ni puces."
+    )
+    sujet_txt = (target.get("subject") or "").strip()
+    if sujet_txt:
+        user_text += f"\n\nNote contextuelle (sujet annoté par l'auteur) : « {sujet_txt} ». À utiliser comme indice de cadrage uniquement, ne le recopie pas."
+
     content = image_message_content(
-        text=(
-            "Décris en 2-3 phrases courtes le personnage visible dans cette image "
-            "(âge approximatif, vêtements, posture, regard, action en cours, ambiance). "
-            "Reste factuel et précis — pas d'interprétation psychologique poussée. "
-            "Réponds en français, en une seule phrase fluide."
-        ),
-        image_path=str(img_path),
-        detail="low",
+        text=user_text, image_path=str(img_path), detail="high",
     )
     descr = chat_text(
         messages=[
-            {"role": "system", "content":
-                "Tu es expert en observation comportementale en boutique de luxe. "
-                "Tu décris des personnages que tu vois dans une image."},
+            {"role": "system", "content": sys_msg},
             {"role": "user", "content": content},
         ],
-        max_completion_tokens=200,
-        timeout=60,
+        max_completion_tokens=400,
+        temperature=0.2,
+        timeout=90,
     ).strip()
     # Cache la description dans meta
     target["_description"] = descr
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return descr
+
+
+def describe_all_boxes(scene_id: str, force: bool = False) -> dict:
+    """Génère / régénère les descriptions de TOUS les cadres d'une scène.
+    Utile après un upgrade du prompt de description ou pour amorcer un
+    module fraîchement importé. Renvoie { box_id: description }."""
+    base = SCENES / scene_id
+    meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
+    out = {}
+    for b in meta.get("boxes", []):
+        bid = str(b.get("id"))
+        try:
+            out[bid] = describe_box(scene_id, bid, force=force)
+        except Exception as e:
+            out[bid] = f"(échec: {e})"
+    return out
 
 
 # ----------------- Génération d'UNE quête liée à un cadre ---------------
@@ -594,7 +646,16 @@ def bootstrap_corpus(scene_ids: list[str] | None = None) -> dict:
         meta_path = SCENES / sid / "meta.json"
         if not meta_path.exists():
             continue
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        # Génère d'abord les descriptions vision pour tous les cadres qui
+        # n'en ont pas (factuel, riche, observable). C'est ce qui sera
+        # ensuite injecté comme label [cadre: …] dans toutes les corrections.
+        try:
+            describe_all_boxes(sid, force=False)
+            # Re-read meta après que describe_all_boxes l'a modifié
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[bootstrap] describe_all_boxes({sid}) failed: {e}", file=sys.stderr)
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
         n1_added = 0; n2_added = 0
         # N1
         for q in meta.get("level1_questions", []):

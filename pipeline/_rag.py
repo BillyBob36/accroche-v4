@@ -193,9 +193,14 @@ def format_corrections_for_prompt(corrections: list[dict], header: str = "") -> 
         content = c.get("content") or c.get("answer") or c.get("question") or c.get("quest_title") or ""
         label = c.get("rating_label") or ""
         note = c.get("note") or ""
+        # Préférence : description vision (riche, factuelle, observable)
+        # plutôt que box_subject (étiquette courte de l'auteur). Si la
+        # vision n'a pas tourné, fallback sur box_subject.
+        box_descr = c.get("box_description", "")
         box_subj = c.get("box_subject", "")
+        box_lbl = box_descr or box_subj or ""
         line_parts = []
-        if box_subj: line_parts.append(f"[cadre: {box_subj[:60]}]")
+        if box_lbl: line_parts.append(f"[cadre: {box_lbl[:240]}]")
         if kind: line_parts.append(f"[{kind}]")
         if content: line_parts.append(f'"{content[:200]}"')
         if label: line_parts.append(f"→ {label}")

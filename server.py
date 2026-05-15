@@ -879,20 +879,6 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, _tunnel_status())
             return
 
-        # Catalogue de personas clients luxe (lecture seule).
-        # Servi tel quel depuis data/client_personas.json.
-        if path == "/api/personas":
-            personas_file = ROOT / "data" / "client_personas.json"
-            if not personas_file.exists():
-                self._send_json(404, {"error": "personas catalog not found"})
-                return
-            try:
-                data = json.loads(personas_file.read_text(encoding="utf-8"))
-            except Exception as e:
-                self._send_json(500, {"error": f"personas parse: {e}"})
-                return
-            self._send_json(200, data)
-            return
         # Debug : agrège pour un cadre toutes les métadonnées du pipeline
         # lineart (geom + tailles RÉELLES de chaque PNG + chemin de chaque
         # artefact). Permet à debug.html de tout afficher d'un coup.

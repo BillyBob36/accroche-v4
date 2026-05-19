@@ -1704,29 +1704,34 @@ function refreshFicheClient(boxId) {
     return;
   }
   container.style.display = 'block';
+  const tags = analysis.tags || [];
+  const tagsHtml = tags.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${tags.map(t => `<span style="display:inline-flex;align-items:center;background:rgba(212,184,122,0.10);border:1px solid rgba(212,184,122,0.35);color:rgba(232,210,160,0.95);padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:0.03em;">${escapeHtmlAttr(String(t))}</span>`).join('')}</div>`
+    : '';
   const persosHtml = (analysis.personnages || []).map((p, i) => {
-    const sig = p.signaux || {};
+    // NOUVEAU schéma simplifié : qui / situation / approche_orientation
+    const qui = p.qui || p.physique || '';
+    const situation = p.situation || '';
+    const approche = p.approche_orientation || '';
+    // Fallback ancien schéma si nouveaux champs absents
+    if (!qui && !situation && !approche) {
+      const sig = p.signaux || {};
+      return `
+        <div style="margin-top:${i>0?10:0}px;padding-top:${i>0?10:0}px;${i>0?'border-top:1px solid rgba(255,255,255,0.10);':''}color:rgba(255,255,255,0.55);font-style:italic;">
+          Analyse au format ancien — clique « 👁 Analyser » pour la moderniser.
+          ${facetLine('Physique', p.physique)}
+          ${facetLine('Tenue', p.tenue)}
+        </div>`;
+    }
     return `
       <div style="margin-top:${i>0?10:0}px;padding-top:${i>0?10:0}px;${i>0?'border-top:1px solid rgba(255,255,255,0.10);':''}">
-        <div style="font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:4px;">Personne ${i+1}${p.physique ? ' — ' + escapeHtmlAttr(p.physique) : ''}</div>
-        ${facetLine('Tenue', p.tenue)}
-        ${facetLine('Accessoires', p.accessoires)}
-        ${facetLine('Cheveux + attitude', p.cheveux_attitude)}
-        ${facetLine('Démarche', sig.demarche)}
-        ${facetLine('Regard', sig.regard)}
-        ${facetLine('Posture', sig.posture)}
-        ${facetLine('Mains', sig.mains)}
-        ${facetLine('Distance', sig.distance)}
-        ${facetLine('Accompagnement', p.accompagnement)}
-        ${facetLine('Indicateurs mission', p.indicateurs_mission)}
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
-          ${chip('Social', p.niveau_social_estime, 'rgba(212,184,122,0.95)')}
-          ${chip('DISC', p.disc_profile_estime, 'rgba(140,200,255,0.95)')}
-          ${chip('Code luxe', p.code_luxe_lu, 'rgba(180,240,180,0.95)')}
-        </div>
+        <div style="font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Personne ${i+1}</div>
+        ${facetLine('Qui', qui)}
+        ${facetLine('Situation', situation)}
+        ${facetLine('Comment l\'aborder', approche)}
       </div>`;
   }).join('');
-  content.innerHTML = persosHtml || '<div style="color:rgba(255,255,255,0.55);font-style:italic;">Analyse vide.</div>';
+  content.innerHTML = (persosHtml || '<div style="color:rgba(255,255,255,0.55);font-style:italic;">Analyse vide.</div>') + tagsHtml;
 }
 function facetLine(label, value) {
   if (!value || !String(value).trim()) return '';

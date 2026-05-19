@@ -138,15 +138,23 @@ def _build_embed_input(entry: dict) -> str:
     """Combine les champs sémantiquement utiles d'une entrée correction en
     une chaîne unique servant d'input à l'embedding.
 
-    Inclut les facettes client (niveau social, DISC, code luxe) pour que
-    les matches RAG soient calibrés sur la TYPOLOGIE de client autant que
-    sur le contenu textuel."""
+    Schéma NOUVEAU (préféré) : qui + situation + approche_orientation + tags.
+    Le matching RAG se fait sur la situation observée décrite en langage
+    naturel — embeddings denses et performants même sans facettes
+    structurées. Schéma ANCIEN (DISC/social/code-luxe + box_description)
+    reste accepté en fallback pour les entrées créées avant la migration."""
     parts = []
-    # Facettes structurées (les plus discriminantes pour le matching client)
+    # NOUVEAU schéma : situation décrite (langage naturel)
+    for k in ("qui", "situation", "approche_orientation"):
+        v = entry.get(k)
+        if v: parts.append(f"{k}: {v}")
+    tags = entry.get("tags")
+    if tags and isinstance(tags, list):
+        parts.append("tags: " + ", ".join(str(t) for t in tags))
+    # ANCIEN schéma (compat) : facettes structurées + cadre
     for k in ("niveau_social", "disc_profile", "code_luxe"):
         v = entry.get(k)
         if v: parts.append(f"{k}: {v}")
-    # Description du cadre (vision factuelle)
     for k in ("box_subject", "box_description"):
         v = entry.get(k)
         if v: parts.append(str(v))
@@ -200,27 +208,43 @@ def format_corrections_for_prompt(corrections: list[dict], header: str = "") -> 
     for c in corrections:
         rating = c.get("rating", "")
         kind = c.get("kind", "")
+        is_best = c.get("is_best")
         content = c.get("content") or c.get("answer") or c.get("question") or c.get("quest_title") or ""
         label = c.get("rating_label") or ""
         note = c.get("note") or ""
-        # Préférence : description vision (riche, factuelle, observable)
-        # plutôt que box_subject (étiquette courte de l'auteur). Si la
-        # vision n'a pas tourné, fallback sur box_subject.
-        box_descr = c.get("box_description", "")
-        box_subj = c.get("box_subject", "")
-        box_lbl = box_descr or box_subj or ""
-        # Facettes structurées éventuellement disponibles (analyse cadre)
-        niveau_social = c.get("niveau_social", "")
-        disc_profile = c.get("disc_profile", "")
-        code_luxe = c.get("code_luxe", "")
-        facets = []
-        if niveau_social: facets.append(f"social: {niveau_social}")
-        if disc_profile: facets.append(f"DISC: {disc_profile}")
-        if code_luxe: facets.append(f"code-luxe: {code_luxe}")
+        # Préférence : nouveau schéma vision (qui + situation), lisible et dense.
+        qui = c.get("qui", "")
+        situation = c.get("situation", "")
+        ctx_lbl = ""
+        if qui or situation:
+            ctx_lbl = f"[ctx: {qui[:140]}"
+            if situation:
+                ctx_lbl += f" — {situation[:200]}"
+            ctx_lbl += "]"
+        else:
+            # Fallback ancien schéma (cadre + facettes DISC)
+            box_lbl = c.get("box_description", "") or c.get("box_subject", "")
+            facets = []
+            for k_lbl, k_raw in (("social", "niveau_social"),
+                                  ("DISC", "disc_profile"),
+                                  ("code-luxe", "code_luxe")):
+                v = c.get(k_raw)
+                if v: facets.append(f"{k_lbl}: {v}")
+            if facets:
+                ctx_lbl = f"[{' · '.join(facets)}]"
+            if box_lbl:
+                ctx_lbl += f"[cadre: {box_lbl[:200]}]"
+        tags = c.get("tags") or []
+        tags_lbl = f"[{' · '.join(str(t) for t in tags[:6])}]" if tags else ""
+        # Marqueur is_best pour les choix N2 (aide GPT à distinguer best/distracteur)
+        role_lbl = ""
+        if kind in ("field_choice_text", "field_choice_explain"):
+            role_lbl = "[BEST]" if is_best else "[distracteur]"
         line_parts = []
-        if facets: line_parts.append(f"[{' · '.join(facets)}]")
-        if box_lbl: line_parts.append(f"[cadre: {box_lbl[:240]}]")
-        if kind: line_parts.append(f"[{kind}]")
+        if tags_lbl: line_parts.append(tags_lbl)
+        if ctx_lbl: line_parts.append(ctx_lbl)
+        if role_lbl: line_parts.append(role_lbl)
+        elif kind: line_parts.append(f"[{kind}]")
         if content: line_parts.append(f'"{content[:200]}"')
         if label: line_parts.append(f"→ {label}")
         if note: line_parts.append(f"raison: {note[:300]}")

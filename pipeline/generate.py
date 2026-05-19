@@ -353,55 +353,50 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
 
     sys_msg = (
         "Tu es OBSERVATEUR FACTUEL d'une scène de boutique de luxe. Tu produis "
-        "une ANALYSE STRUCTURÉE du ou des personnages visibles dans l'image. "
+        "une analyse SIMPLE et DENSE du ou des personnages visibles dans l'image. "
+        "Cette analyse sera réutilisée par un coach marketing qui écrira un quizz "
+        "de formation vente — tu lui sers l'OBSERVATION, pas la prescription.\n\n"
         "RÈGLES STRICTES :\n"
         "  • NE DÉCRIS JAMAIS le décor, le fond, les vitrines, le mobilier — "
         "uniquement les personnages.\n"
-        "  • S'il y a plusieurs personnages, produis une analyse PAR personnage "
-        "dans le tableau `personnages`.\n"
-        "  • N'INVENTE RIEN. Si un détail n'est pas visible, mets une chaîne "
-        "vide « » ou omets la clé.\n"
-        "  • PAS d'interprétation psychologique. Interdit : « semble », « a "
-        "l'air », « paraît ». Autorisé : « regarde vers », « tient à deux mains ».\n"
-        "  • PAS d'adjectif vague. Interdit : « élégant », « distingué ». "
-        "Autorisé : « manteau navy », « chignon bas », « ceinture nouée ».\n"
-        "  • Pour chaque dimension SIGNAUX (démarche, regard, posture, mains, "
-        "distance), reste sous 12 mots, factuel.\n"
-        "  • Pour `code_luxe_lu` : choisis UN mot parmi {discretion, "
-        "ostentation, neutre, intermediaire}.\n"
-        "  • Pour `disc_profile_estime` : un seul mot parmi {Dominant, "
-        "Influent, Stable, Conforme, inconnu}.\n"
-        "  • Pour `niveau_social_estime` : catégorie courte (classe populaire / "
-        "moyenne / moyenne supérieure / aisée / très aisée, ou nuance)."
+        "  • Une analyse PAR personnage dans le tableau `personnages`.\n"
+        "  • AUCUNE accroche concrète, AUCUNE phrase à prononcer. C'est le rôle "
+        "du coach marketing en aval (qui pioche dans la mémoire RAG). Toi tu "
+        "observes et tu donnes une ORIENTATION typologique d'adresse.\n"
+        "  • Vocabulaire factuel et concret. Interdit : « élégant », « semble », "
+        "« paraît », « a l'air ». Autorisé : « manteau navy », « regarde vers la "
+        "vitrine droite », « tient son sac à deux mains ».\n"
+        "  • Si un signal n'est pas lisible, ne le mentionne pas plutôt que "
+        "d'inventer."
     )
     user_text = (
         "Renvoie un JSON STRICT avec cette structure :\n"
         "{\n"
         '  "personnages": [\n'
         "    {\n"
-        '      "physique": "Genre + âge approximatif (10 ans)",\n'
-        '      "tenue": "Haut/bas/manteau/chaussures + matières + couleurs",\n'
-        '      "accessoires": "Sac, bijoux, lunettes, montre, ceinture, etc.",\n'
-        '      "cheveux_attitude": "Cheveux + posture corps + mains + regard",\n'
-        '      "signaux": {\n'
-        '        "demarche": "ex: lente exploratoire / rapide déterminée / hésitante",\n'
-        '        "regard": "ex: fixé sur la vitrine X / balaye la boutique",\n'
-        '        "posture": "ex: ouverte buste droit / fermée bras croisés",\n'
-        '        "mains": "ex: libres / tient sac / dans poche / téléphone",\n'
-        '        "distance": "ex: proche du comptoir / au seuil de la porte"\n'
-        "      },\n"
-        '      "accompagnement": "seul·e / accompagné·e (+ qui)",\n'
-        '      "indicateurs_mission": "ex: sac autre marque luxe visible / téléphone consulté / regarde montre",\n'
-        '      "niveau_social_estime": "classe aisée",\n'
-        '      "disc_profile_estime": "Stable",\n'
-        '      "code_luxe_lu": "discretion"\n'
+        '      "qui": "1 phrase. Genre + tranche d\'âge + accompagnement + style visuel + lecture sociale courte. '
+        'Ex: \\"Femme 35-45, solo, soignée, code discrétion luxe\\" ; \\"Couple ~40 ans, lui pensif costume sobre, elle souriante manteau clair\\" ; \\"Dame senior 65+, seule, manteau beige, sac modeste, paraît hésitante au seuil\\".",\n'
+        '      "situation": "1 phrase. Ce qu\'il/elle FAIT À CET INSTANT : phase (entrée / exploration / focus produit / hésitation / sortie), regard, posture, intention lisible, signaux d\'ouverture/défensive/pression. '
+        'Ex: \\"Exploration patiente, regard appuyé sur la vitrine droite, posture ouverte, aucun signal de pression\\" ; \\"Au seuil, regard balayant, tient son sac à deux mains, intention faible mais curiosité visible\\".",\n'
+        '      "approche_orientation": "1 phrase. Recommandation TYPOLOGIQUE d\'adresse (ton, registre, timing, distance, niveau de familiarité). Aucune phrase concrète, aucune accroche. '
+        'Ex: \\"Profil amateur éclairé discret : ton sobre, vouvoiement chaleureux, respect du temps (~20-30s), amorce factuelle sur ce qu\'elle regarde\\" ; \\"Cliente intimidée : accueil chaleureux non commercial, compliment indirect sur un détail qu\'elle porte, ralentir le rythme\\"."\n'
         "    }\n"
         "  ],\n"
-        '  "resume_prose": "Une phrase compacte (< 80 mots/perso) qui résume tous les personnages factuellement, prête à être lue par un humain. Ne décris PAS le décor."\n'
+        '  "tags": ["...4 à 8 facettes courtes pour le matching sémantique..."],\n'
+        '  "resume": "Une phrase ≤ 30 mots qui résume globalement la scène (utilisée comme aperçu humain)."\n'
         "}\n\n"
-        "Couvre exhaustivement, et si un détail n'est pas visible, omets le champ "
-        "ou mets « » au lieu d'inventer. Limite : 100 mots max par personnage "
-        "dans `resume_prose`."
+        "Vocabulaire stable à privilégier pour `tags` (pour que le RAG matche bien des "
+        "situations équivalentes) :\n"
+        "  • composition  : solo / couple / groupe / famille\n"
+        "  • phase        : entree / exploration / focus / hesitant / presse / attente / sortie\n"
+        "  • ouverture    : ouvert / defensif / neutre\n"
+        "  • code         : discretion / ostentation / neutre\n"
+        "  • expertise    : novice / amateur / expert\n"
+        "  • intention    : intention-faible / intention-moyenne / intention-forte\n"
+        "  • age          : jeune / mature / senior\n"
+        "  • mission      : exploration / cadeau / planifie / accompagnement / curiosite\n"
+        "Choisis 4-8 tags les plus saillants. Tu peux ajouter d'autres tags pertinents "
+        "(`alliance-visible`, `signal-pression`, `groupe-amies`, etc.) si c'est utile."
     )
     sujet_txt = (target.get("subject") or "").strip()
     if sujet_txt:
@@ -419,19 +414,20 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         temperature=0.2,
         timeout=120,
     )
-    # Fallback en cas de retour malformé
-    descr = (analysis.get("resume_prose") or "").strip()
+    # Fallback en cas de retour malformé. Prend `resume` (nouveau schéma) ou
+    # `resume_prose` (ancien schéma) ; si rien, reconstruit depuis qui+situation.
+    descr = (analysis.get("resume") or analysis.get("resume_prose") or "").strip()
     if not descr and analysis.get("personnages"):
-        # On reconstruit un prose simple à partir des champs personnages
         parts = []
         for p in analysis.get("personnages", [])[:5]:
-            seg = " ".join(filter(None, [
-                p.get("physique", ""),
-                p.get("tenue", ""),
-                p.get("accessoires", ""),
-                p.get("cheveux_attitude", ""),
-                f"Niveau social estimé : {p.get('niveau_social_estime','')}." if p.get("niveau_social_estime") else "",
-            ]))
+            # Nouveau schéma : qui + situation
+            seg = " ".join(filter(None, [p.get("qui", ""), p.get("situation", "")]))
+            # Ancien schéma : physique + tenue (compat)
+            if not seg.strip():
+                seg = " ".join(filter(None, [
+                    p.get("physique", ""), p.get("tenue", ""),
+                    p.get("accessoires", ""), p.get("cheveux_attitude", ""),
+                ]))
             if seg.strip():
                 parts.append(seg.strip())
         descr = " ".join(parts)

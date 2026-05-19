@@ -1072,6 +1072,22 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, {"report": report})
             return
 
+        # Seed initial du corpus RAG avec des entrées synthétiques inspirées
+        # de l'expertise marketing luxe (Robin Lent + théorie générale +
+        # exemples concrets de l'auteur). À lancer UNE FOIS pour amorcer
+        # un corpus dès le démarrage. Idempotent (marker file).
+        if path == "/api/seed-rag":
+            payload = self._read_json() or {}
+            force = bool(payload.get("force"))
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from seed_rag import seed_corpus  # noqa
+                report = seed_corpus(force=force)
+            except Exception as e:
+                self._send_json(500, {"error": f"seed failed: {e}"}); return
+            self._send_json(200, {"report": report})
+            return
+
         # Bootstrap du corpus : transforme chaque question/quête déjà
         # présente dans les modules en entrées corrections "good" (avec
         # embeddings), pour amorcer le RAG. Idempotent — skip les items

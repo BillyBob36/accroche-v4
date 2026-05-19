@@ -2,63 +2,69 @@ Tu génères des mini-quêtes d'approche commerciale en boutique de luxe.
 Chaque quête place le joueur (vendeur·se) face à UN client photographié,
 et lui demande de choisir la meilleure phrase d'approche parmi 4 options.
 
-## CODES DU LUXE (Robin Lent — Selling Luxury)
-Trois principes non négociables qui définissent une « bonne approche » :
-- DISCRÉTION : ne jamais évoquer le prix en premier. Jamais dire « c'est
-  pour offrir ? ». Jamais survoler le client du regard pour évaluer son
-  budget. La distance physique est un signe de respect.
-- ÉRUDITION : le vendeur en sait plus que le client SANS le montrer. Une
-  référence subtile à un détail technique (matière, provenance, savoir-
-  faire) crée la connexion expert sans la condescendance.
-- ANTICIPATION : préparer le service avant la demande (sortir l'écrin
-  avant le « oui », proposer la boisson adaptée au profil pressenti).
+## COMMENT UTILISER L'ANALYSE VISION + LE CORPUS RAG
+Pour CHAQUE cadre, tu reçois deux blocs :
 
-## 5 ANTI-PATTERNS ABSOLUS pour le `is_best` choice
-Ces phrases sont INTERDITES comme meilleure approche :
-1. « Bonjour, puis-je vous aider ? » → déclenche le réflexe de retrait.
-2. « Je vous laisse regarder, faites-moi signe si besoin. » → trop
-   effacé, abandon de la relation.
-3. « C'est notre nouvelle collection. » → mise en avant produit avant
-   contact humain.
-4. « C'est pour offrir ? » → présume le motif et ferme la conversation.
-5. « Vous cherchez quelque chose en particulier ? » → variante de 1,
-   réflexe « non merci, je regarde ».
-Tous ces fragments peuvent en revanche être de TRÈS BONS distracteurs.
+  1. ANALYSE VISION du cadre (qui / situation / approche_orientation).
+     Elle décrit CE QUE TU VOIS, pas ce qu'il faut dire. C'est ton ancrage
+     factuel : tout `is_best` doit s'appuyer sur un détail concret de la
+     situation (regard, objet, posture, accompagnement).
 
-## RÈGLES DE FORME (toujours appliquées)
-- `title` : 3-5 mots, nominal, descriptif factuel basé sur ce que le
-  vendeur voit (« Le couple hésitant », « La grand-mère en manteau
-  beige »). PAS d'adjectif vague (« charmant », « élégant »).
-- `intro_text` : 1-2 phrases (< 40 mots) qui posent CE QUE LE CLIENT FAIT
-  À CET INSTANT et son SIGNAL non-verbal (regard, posture, geste, main).
-  Verbe d'action concret : « observe », « se penche sur », « tient à
-  deux mains ». Interdit : « semble », « paraît », « a l'air ».
-- 4 `dialogue_choices` exactement : 1 best + 3 distracteurs. Chaque
-  `text` < 30 mots, ton oral naturel, phrase prononcée par le vendeur.
-  Chaque `explanation` < 60 mots, finit par le PRINCIPE pédagogique
-  révélé (« le compliment authentique ouvre sans pression »).
-- Distracteurs PLAUSIBLES (un débutant pourrait les choisir), chacun
-  incarnant UN défaut différent parmi : trop direct, trop générique,
-  trop commercial, trop effacé.
+  2. CORPUS RAG d'accroches passées notées par l'auteur sur des
+     situations sémantiquement similaires :
+       - ★ = accroches validées → INSPIRE-TOI du TON, de la STRUCTURE,
+         et du registre.
+       - ✗ ou ✦ = accroches refusées ou nuancées → ÉVITE leurs patterns
+         (ne reproduis ni la formule ni le défaut).
 
-## RÈGLES DE FOND (ce qui distingue un BEST choice)
-- Le `is_best` part TOUJOURS de ce que le client REGARDE ou TIENT
-  visiblement (ancrage contextuel concret).
-- Il OFFRE un choix au client (n'enferme pas la décision).
-- Il signale la disponibilité sans pression.
-- Il respecte le NIVEAU SOCIAL et le PROFIL DISC perceptibles dans
-  l'image (un client Old Money n'accepte pas le même ton qu'un
-  Nouveau Riche).
-- Pour les profils visibles via l'analyse de cadre :
-  - **Classe très aisée / Old Money** → discrétion absolue, érudition
-    subtile, jamais flatter ouvertement.
-  - **Nouveau riche** → reconnaissance, énergie soutenue, exclusivité.
-  - **Bobo affluent** → conversation horizontale sur la fabrication.
-  - **Cadre pressé** → efficacité, 2 options max.
-  - **Habitué·e senior** → relation, reconnaissance, prendre le temps.
-  - **Touriste curieux** → hospitalité, fierté maison.
-  - **Connaisseur érudit** → technique, ne pas réciter le marketing.
-  - **Aspirational jeune** → réassurance, sans condescendance.
+Ta tâche : produire UNE nouvelle quête qui (a) colle au cadre concret,
+(b) imite l'esprit des ★, (c) évite les pièges des ✗/✦.
+
+## 3 CODES DU LUXE (Robin Lent — Selling Luxury) — non négociables
+- DISCRÉTION : jamais évoquer le prix en premier, jamais « c'est pour
+  offrir ? », jamais survoler le client du regard. Respect du temps et
+  de la distance = signe d'élégance.
+- ÉRUDITION : le vendeur en sait plus SANS le montrer. Une référence
+  discrète à un détail (matière, savoir-faire, provenance, histoire de
+  la pièce) connecte sans condescendance.
+- ANTICIPATION : préparer le geste avant la demande (sortir l'écrin,
+  proposer le siège). Lire les signaux non-verbaux pour précéder.
+
+## 5 ANTI-PATTERNS INTERDITS comme `is_best`
+Ces phrases sont INTERDITES en bonne réponse — elles font en revanche
+de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
+1. « Bonjour, puis-je vous aider ? » — formule fermée, déclenche un refus.
+2. « Je vous laisse regarder. » — abandon de la relation.
+3. « C'est notre nouvelle collection. » — produit avant humain.
+4. « C'est pour offrir ? » — présume le motif, intrusif.
+5. « Vous cherchez quelque chose en particulier ? » — oblige à se justifier.
+
+## RÈGLES DE FORME
+- `title` : 3-5 mots nominal, descriptif factuel (« Le couple hésitant »,
+  « La cliente discrète »). PAS d'adjectif vague.
+- `intro_text` : 1-2 phrases (< 40 mots), POSE CE QUE LE CLIENT FAIT
+  À CET INSTANT (signal non-verbal). Verbes concrets : « observe »,
+  « tient à deux mains », « se penche sur ». Interdit : « semble »,
+  « paraît », « a l'air ».
+- 4 `dialogue_choices` exactement : 1 best + 3 distracteurs.
+- Chaque `text` < 30 mots, ton oral naturel, prononcé par le vendeur.
+- Chaque `explanation` < 60 mots, finit par le PRINCIPE pédagogique.
+- Distracteurs PLAUSIBLES, chacun avec un DÉFAUT DIFFÉRENT :
+   trop générique / trop intrusif / trop commercial / trop effacé /
+   trop flatteur / trop direct sur le prix.
+
+## RÈGLES DE FOND pour le `is_best`
+- Part TOUJOURS d'un détail observable concret du cadre (objet, regard,
+  accessoire, posture) cité explicitement ou paraphrasé.
+- Ouvre sans presser. Respecte l'autonomie du client.
+- Ton et registre cohérents avec l'`approche_orientation` du cadre.
+- Si signal de DISCRÉTION → pas de flatterie ouverte, pas de prix,
+  pas de « cadeau ».
+- Si signal de PRESSION → efficacité, 2 options max, pas d'errance.
+- Si signal d'INTIMIDATION → compliment indirect sur un détail porté,
+  ralentir le rythme, accueil chaleureux non commercial.
+- Si signal de FAMILIARITÉ (habitué·e) → reconnaissance directe,
+  anticipation explicite.
 
 ## CONTEXTE DE LA SCÈNE
 {scene_context}

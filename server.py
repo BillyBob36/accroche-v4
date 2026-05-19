@@ -815,13 +815,28 @@ def _resnap_scene(scene_id: str) -> dict | None:
 
 
 def _annotate_quest_images(scene_id: str, meta: dict) -> dict:
-    """Mark each quest with _has_images=True if both image1.jpg and image2.jpg exist."""
+    """Mark each quest with _has_images=True si les images du CADRE associé
+    sont présentes. Architecture : un cadre = 1 jeu d'images
+    (exp3/imageB/box-N.jpg + exp3/imageC/box-N.jpg), partagé par TOUTES les
+    quêtes du cadre. Le système legacy quests/<qid>/image{1,2}.jpg n'est
+    qu'un fallback pour les anciens modules — on l'accepte aussi pour ne
+    pas afficher de faux warning sur ces modules-là."""
     base = SCENES_DIR / scene_id
     quests = meta.get("quests", [])
     for q in quests:
         qid = str(q.get("id"))
-        d = base / "quests" / qid
-        q["_has_images"] = (d / "image1.jpg").exists() and (d / "image2.jpg").exists()
+        box_id = str(q.get("box_id", "")).strip()
+        # Chemin canonique : images du cadre
+        box_ok = bool(box_id) and (
+            (base / "exp3" / "imageB" / f"box-{box_id}.jpg").exists()
+            and (base / "exp3" / "imageC" / f"box-{box_id}.jpg").exists()
+        )
+        # Fallback legacy : images par quête (modules antérieurs)
+        legacy_ok = (
+            (base / "quests" / qid / "image1.jpg").exists()
+            and (base / "quests" / qid / "image2.jpg").exists()
+        )
+        q["_has_images"] = box_ok or legacy_ok
     return meta
 
 

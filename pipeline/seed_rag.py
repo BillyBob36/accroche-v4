@@ -26,7 +26,8 @@ from generate import append_correction  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-MARKER = DATA / "_seeded_v1.flag"
+SEED_VERSION = 2  # bump à chaque évolution majeure du schéma seed
+MARKER = DATA / f"_seeded_v{SEED_VERSION}.flag"
 
 
 # --------- Niveau 1 — questions d'observation ---------
@@ -130,14 +131,17 @@ N1_SEEDS = [
 # Helper pour créer une famille de 4 entrées (1 best + 3 distracteurs)
 def _quest_seed_block(qui, situation, approche, tags, title, intro,
                        best_text, best_expl, best_label,
-                       distractors):
+                       distractors, dynamique_groupe=None):
     """Renvoie une liste d'entrées correction N2 pour une situation.
     `distractors` = liste de tuples (rating, text, expl, label) pour chacun
-    des 3 distracteurs (rating ∈ {nuanced, refused})."""
+    des 3 distracteurs (rating ∈ {nuanced, refused}).
+    `dynamique_groupe` = dict optionnel pour les cadres multi-personnages."""
     base = {
         "qui": qui, "situation": situation,
         "approche_orientation": approche, "tags": tags,
     }
+    if dynamique_groupe:
+        base["dynamique_groupe"] = dynamique_groupe
     out = []
     # Titre + intro = "good" (servent d'inspiration de phrasage)
     out.append({**base, "kind": "field_title", "rating": "good",
@@ -232,7 +236,13 @@ N2_SEEDS += _quest_seed_block(
     qui="Couple ~35-45 ans, lui pensif visage soucieux, elle souriante posture ouverte, devant les bagues.",
     situation="L'homme observe les pièces avec un visage pensif, mains croisées, regard interne ; la femme sourit légèrement et le regarde lui plus que les bijoux. Signaux mixtes : hésitation côté homme, ouverture côté femme.",
     approche="Couple à dynamique déséquilibrée : ouvrir sur la réflexion de l'homme (le freineur) sans presser, créer un espace de dialogue sans charge émotionnelle.",
-    tags=["couple", "hesitant", "ouvert", "neutre", "intention-moyenne", "decideur-mixte"],
+    tags=["couple", "hesitant", "ouvert", "neutre", "intention-moyenne", "decideur-mixte", "freineur-visible"],
+    dynamique_groupe={
+        "interaction": "Elle le regarde lui, pas les bijoux. Elle attend qu'il parle ou décide. Lui est concentré ailleurs, dans sa réflexion.",
+        "roles": "Lui = freineur visible, en charge mentale de la décision. Elle = porteuse de l'envie, en attente de validation, posture facilitante.",
+        "atmosphere": "Hésitation calme et bienveillante, pas de tension audible. Sujet possiblement à enjeu personnel (mariage, anniversaire, événement).",
+        "implication_vendeur": "Adresse-toi d'abord à lui (le freineur) pour ouvrir sa réflexion. NE PAS aborder elle d'abord — ça court-circuiterait sa dynamique d'attente et créerait du déséquilibre. Évite tout sujet présumé chargé (mariage, événement) tant qu'il ne l'a pas évoqué.",
+    },
     title="Le couple hésitant",
     intro="Lui observe les bagues, sourcils légèrement froncés, mains croisées dans le dos. Elle sourit et le regarde, attendant qu'il prenne la parole.",
     best_text="Vous m'avez l'air pensif, je peux nourrir votre réflexion ?",
@@ -421,7 +431,13 @@ N2_SEEDS += _quest_seed_block(
     qui="Groupe de 2-3 amies 25-40, complices, rires discrets, exploration ludique de la boutique.",
     situation="Phase d'exploration collective joyeuse, regards qui se croisent et commentent les pièces. Pas de signe de pression. Intention probablement mixte (l'une peut-être plus avancée que les autres).",
     approche="Profil groupe ludique : accueillir collectivement sans cibler une seule personne, donner espace de jeu et de complicité, laisser la dynamique de groupe opérer.",
-    tags=["groupe", "feminin", "exploration", "ouvert", "amateur", "ludique"],
+    tags=["groupe", "feminin", "exploration", "ouvert", "amateur", "ludique", "complicite"],
+    dynamique_groupe={
+        "interaction": "Elles se passent des commentaires complices, pointent des pièces du doigt, rient ensemble. Trio horizontal, aucune ne domine visiblement la conversation.",
+        "roles": "Dynamique horizontale : pas de décideur unique, chacune influence et est influencée. Possible que l'une soit la « cliente cible » mais ce n'est pas lisible visuellement.",
+        "atmosphere": "Énergie ludique et complice, climat détendu, registre de découverte joyeuse plus que d'achat planifié.",
+        "implication_vendeur": "Accueil COLLECTIF impératif. NE PAS cibler une seule personne (ça brise la complicité, transforme une en cliente et les autres en figurantes). Laisser opérer la dynamique, signaler la disponibilité sans s'imposer.",
+    },
     title="Les amies complices",
     intro="Trois amies parcourent la boutique en se passant des commentaires complices. Elles s'arrêtent devant la collection.",
     best_text="Bonjour mesdames, prenez votre temps. Si une pièce vous fait rêver, dites-le moi !",
@@ -446,34 +462,80 @@ N2_SEEDS += _quest_seed_block(
 
 # --------- Orchestration ---------
 
+import json as _json
+
+def _purge_old_seeds(level: int) -> int:
+    """Supprime du corpus JSONL les entrées seed plus anciennes que la
+    version courante (champ `seed_v < SEED_VERSION`). PRÉSERVE :
+      - les entrées seed à la version courante (idempotence)
+      - TOUTES les entrées non-seed (notations utilisateur).
+    Renvoie le nombre d'entrées purgées."""
+    jsonl = DATA / f"corrections_n{level}.jsonl"
+    md = DATA / f"corrections_n{level}.txt"
+    if not jsonl.exists():
+        return 0
+    kept: list[str] = []
+    purged = 0
+    for raw in jsonl.read_text(encoding="utf-8").splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        try:
+            e = _json.loads(s)
+        except _json.JSONDecodeError:
+            kept.append(raw); continue
+        sv = e.get("seed_v")
+        is_old_seed = e.get("bootstrap") and isinstance(sv, int) and sv < SEED_VERSION
+        if is_old_seed:
+            purged += 1
+        else:
+            kept.append(raw)
+    jsonl.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    # On marque aussi le mirroir markdown comme stale (régénération propre
+    # difficile sans re-parser, on laisse la prochaine refine_prompt s'appuyer
+    # sur le JSONL — qui est la source de vérité).
+    if md.exists():
+        with md.open("a", encoding="utf-8") as f:
+            f.write(f"\n--- # [purge] {purged} entrée(s) seed v<{SEED_VERSION} retirées du JSONL\n")
+    return purged
+
+
 def seed_corpus(force: bool = False) -> dict:
-    """Append toutes les entrées N1 + N2 au corpus RAG. Idempotent :
-    skip si le marqueur _seeded_v1.flag existe (sauf si force=True)."""
+    """Append toutes les entrées N1 + N2 au corpus RAG. Idempotent par
+    SEED_VERSION : skip si le marker `_seeded_v{SEED_VERSION}.flag` existe.
+    Au passage, purge les anciennes versions de seed (sans toucher aux
+    notations utilisateur)."""
     if MARKER.exists() and not force:
         return {"skipped": True, "reason": f"marker {MARKER.name} present (déjà seedé)",
-                "n1_added": 0, "n2_added": 0}
-    # On n'écrit le marqueur QU'à la fin → si l'embedding plante au milieu, on
-    # peut relancer sans dupliquer (les fichiers JSONL/MD sont append-only mais
-    # ce sont les MÊMES entrées seed donc OK de re-jouer en cas d'échec).
+                "n1_added": 0, "n2_added": 0, "purged_n1": 0, "purged_n2": 0}
+    # Purge des anciennes versions de seed (préserve les notations user)
+    purged_n1 = _purge_old_seeds(1)
+    purged_n2 = _purge_old_seeds(2)
     n1_added = 0
     n2_added = 0
     for entry in N1_SEEDS:
         full = {
             **entry, "scene": "_seed", "level": 1,
-            "date": _now(), "bootstrap": True, "seed_v": 1,
+            "date": _now(), "bootstrap": True, "seed_v": SEED_VERSION,
         }
         append_correction(1, full)
         n1_added += 1
     for entry in N2_SEEDS:
         full = {
             **entry, "scene": "_seed", "level": 2,
-            "date": _now(), "bootstrap": True, "seed_v": 1,
+            "date": _now(), "bootstrap": True, "seed_v": SEED_VERSION,
         }
         append_correction(2, full)
         n2_added += 1
     MARKER.parent.mkdir(parents=True, exist_ok=True)
-    MARKER.write_text(f"seeded {n1_added} N1 + {n2_added} N2\n", encoding="utf-8")
-    return {"skipped": False, "n1_added": n1_added, "n2_added": n2_added,
+    MARKER.write_text(
+        f"seeded v{SEED_VERSION} : {n1_added} N1 + {n2_added} N2 "
+        f"(purged {purged_n1}+{purged_n2} entrées d'anciennes versions)\n",
+        encoding="utf-8",
+    )
+    return {"skipped": False,
+            "n1_added": n1_added, "n2_added": n2_added,
+            "purged_n1": purged_n1, "purged_n2": purged_n2,
             "marker": str(MARKER.relative_to(ROOT))}
 
 

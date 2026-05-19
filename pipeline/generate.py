@@ -360,6 +360,9 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         "  • NE DÉCRIS JAMAIS le décor, le fond, les vitrines, le mobilier — "
         "uniquement les personnages.\n"
         "  • Une analyse PAR personnage dans le tableau `personnages`.\n"
+        "  • S'IL Y A PLUSIEURS PERSONNES (couple, amis, famille, collègues), "
+        "ajoute aussi un objet `dynamique_groupe` qui décrit l'interaction "
+        "entre elles — c'est SOUVENT le signal le plus important pour la vente.\n"
         "  • AUCUNE accroche concrète, AUCUNE phrase à prononcer. C'est le rôle "
         "du coach marketing en aval (qui pioche dans la mémoire RAG). Toi tu "
         "observes et tu donnes une ORIENTATION typologique d'adresse.\n"
@@ -375,16 +378,28 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         '  "personnages": [\n'
         "    {\n"
         '      "qui": "1 phrase. Genre + tranche d\'âge + accompagnement + style visuel + lecture sociale courte. '
-        'Ex: \\"Femme 35-45, solo, soignée, code discrétion luxe\\" ; \\"Couple ~40 ans, lui pensif costume sobre, elle souriante manteau clair\\" ; \\"Dame senior 65+, seule, manteau beige, sac modeste, paraît hésitante au seuil\\".",\n'
+        'Ex: \\"Femme 35-45, solo, soignée, code discrétion luxe\\" ; \\"Homme ~40 ans pensif, costume sobre, mains croisées\\" ; \\"Dame senior 65+, manteau beige, sac modeste\\".",\n'
         '      "situation": "1 phrase. Ce qu\'il/elle FAIT À CET INSTANT : phase (entrée / exploration / focus produit / hésitation / sortie), regard, posture, intention lisible, signaux d\'ouverture/défensive/pression. '
-        'Ex: \\"Exploration patiente, regard appuyé sur la vitrine droite, posture ouverte, aucun signal de pression\\" ; \\"Au seuil, regard balayant, tient son sac à deux mains, intention faible mais curiosité visible\\".",\n'
-        '      "approche_orientation": "1 phrase. Recommandation TYPOLOGIQUE d\'adresse (ton, registre, timing, distance, niveau de familiarité). Aucune phrase concrète, aucune accroche. '
-        'Ex: \\"Profil amateur éclairé discret : ton sobre, vouvoiement chaleureux, respect du temps (~20-30s), amorce factuelle sur ce qu\'elle regarde\\" ; \\"Cliente intimidée : accueil chaleureux non commercial, compliment indirect sur un détail qu\'elle porte, ralentir le rythme\\"."\n'
+        'Ex: \\"Exploration patiente, regard appuyé sur la vitrine droite, posture ouverte\\" ; \\"Sourcils froncés, mains dans le dos, regard interne sur les bagues\\".",\n'
+        '      "approche_orientation": "1 phrase. Recommandation TYPOLOGIQUE d\'adresse (ton, registre, timing, distance, familiarité). Aucune phrase concrète, aucune accroche. '
+        'Ex: \\"Ton sobre, vouvoiement chaleureux, respect du temps (~20-30s), amorce factuelle sur ce qu\'elle regarde\\"."\n'
         "    }\n"
         "  ],\n"
+        '  "dynamique_groupe": {\n'
+        '    "interaction": "1 phrase. Comment les personnes interagissent en cet instant : qui parle/regarde qui, complicité ou tension, gestes partagés ou non. '
+        'Ex: \\"Elle le regarde lui plutôt que les pièces, attend qu\'il prenne la parole\\" ; \\"Les trois amies se passent des commentaires complices en pointant des pièces\\".",\n'
+        '    "roles": "1 phrase. Qui joue quel rôle : décideur visible, freineur, prescripteur, accompagnant passif, payeur probable, suiveur. '
+        'Ex: \\"Il est le freineur pensif, elle l\'attend et valide\\" ; \\"L\'une mène l\'exploration, les deux autres suivent et commentent\\".",\n'
+        '    "atmosphere": "1 phrase. Climat émotionnel observable : complicité joyeuse, tension feutrée, hésitation partagée, indifférence respectueuse, etc. '
+        'Ex: \\"Hésitation calme et bienveillante\\" ; \\"Énergie ludique et complice\\".",\n'
+        '    "implication_vendeur": "1 phrase. Conséquence concrète pour l\'approche : à qui adresser l\'argument clé, comment respecter la dynamique, quoi ne PAS faire vis-à-vis du groupe. '
+        'Ex: \\"Ouvrir sur le freineur (lui) sans presser la femme — l\'aborder à elle d\'abord casserait la dynamique\\" ; \\"Accueil collectif, surtout ne pas cibler une seule personne au risque de briser la complicité\\"."\n'
+        "  },\n"
         '  "tags": ["...4 à 8 facettes courtes pour le matching sémantique..."],\n'
         '  "resume": "Une phrase ≤ 30 mots qui résume globalement la scène (utilisée comme aperçu humain)."\n'
         "}\n\n"
+        "IMPORTANT : si UN SEUL personnage est visible, OMETS complètement le champ "
+        "`dynamique_groupe` (ne renvoie pas l\'objet, pas même vide).\n\n"
         "Vocabulaire stable à privilégier pour `tags` (pour que le RAG matche bien des "
         "situations équivalentes) :\n"
         "  • composition  : solo / couple / groupe / famille\n"
@@ -395,6 +410,7 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         "  • intention    : intention-faible / intention-moyenne / intention-forte\n"
         "  • age          : jeune / mature / senior\n"
         "  • mission      : exploration / cadeau / planifie / accompagnement / curiosite\n"
+        "  • dynamique    : decideur-clair / decideur-mixte / freineur-visible / complicite / tension\n"
         "Choisis 4-8 tags les plus saillants. Tu peux ajouter d'autres tags pertinents "
         "(`alliance-visible`, `signal-pression`, `groupe-amies`, etc.) si c'est utile."
     )

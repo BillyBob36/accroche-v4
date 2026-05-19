@@ -1731,7 +1731,31 @@ function refreshFicheClient(boxId) {
         ${facetLine('Comment l\'aborder', approche)}
       </div>`;
   }).join('');
-  content.innerHTML = (persosHtml || '<div style="color:rgba(255,255,255,0.55);font-style:italic;">Analyse vide.</div>') + tagsHtml;
+  // Bloc dynamique de groupe (cadres multi-personnages)
+  const dyn = analysis.dynamique_groupe;
+  let dynHtml = '';
+  if (dyn && typeof dyn === 'object') {
+    const dynRows = [
+      facetLine('Interaction', dyn.interaction),
+      facetLine('Rôles', dyn.roles),
+      facetLine('Atmosphère', dyn.atmosphere),
+      facetLine('Implication pour le vendeur', dyn.implication_vendeur),
+    ].filter(Boolean).join('');
+    if (dynRows) {
+      dynHtml = `
+        <div style="margin-top:12px;padding:10px;background:rgba(212,184,122,0.06);border-left:3px solid rgba(212,184,122,0.55);border-radius:4px;">
+          <div style="font-weight:700;color:rgba(232,210,160,1);margin-bottom:6px;letter-spacing:0.04em;font-size:11px;text-transform:uppercase;">Dynamique de groupe</div>
+          ${dynRows}
+        </div>`;
+    }
+  } else if (typeof dyn === 'string' && dyn.trim()) {
+    dynHtml = `
+      <div style="margin-top:12px;padding:10px;background:rgba(212,184,122,0.06);border-left:3px solid rgba(212,184,122,0.55);border-radius:4px;">
+        <div style="font-weight:700;color:rgba(232,210,160,1);margin-bottom:6px;letter-spacing:0.04em;font-size:11px;text-transform:uppercase;">Dynamique de groupe</div>
+        ${facetLine('', dyn)}
+      </div>`;
+  }
+  content.innerHTML = (persosHtml || '<div style="color:rgba(255,255,255,0.55);font-style:italic;">Analyse vide.</div>') + dynHtml + tagsHtml;
 }
 function facetLine(label, value) {
   if (!value || !String(value).trim()) return '';

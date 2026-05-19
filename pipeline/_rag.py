@@ -148,6 +148,14 @@ def _build_embed_input(entry: dict) -> str:
     for k in ("qui", "situation", "approche_orientation"):
         v = entry.get(k)
         if v: parts.append(f"{k}: {v}")
+    # Dynamique de groupe (cadres multi-personnages)
+    dyn = entry.get("dynamique_groupe")
+    if isinstance(dyn, dict):
+        for k in ("interaction", "roles", "atmosphere", "implication_vendeur"):
+            v = dyn.get(k)
+            if v: parts.append(f"dyn_{k}: {v}")
+    elif isinstance(dyn, str) and dyn:
+        parts.append(f"dynamique_groupe: {dyn}")
     tags = entry.get("tags")
     if tags and isinstance(tags, list):
         parts.append("tags: " + ", ".join(str(t) for t in tags))
@@ -221,6 +229,18 @@ def format_corrections_for_prompt(corrections: list[dict], header: str = "") -> 
             if situation:
                 ctx_lbl += f" — {situation[:200]}"
             ctx_lbl += "]"
+            # Si la correction porte aussi une dynamique_groupe, on l'ajoute
+            # pour donner à GPT le contexte d'interaction (multi-personnages).
+            dyn = c.get("dynamique_groupe")
+            if isinstance(dyn, dict):
+                dyn_bits = []
+                for k in ("interaction", "roles", "implication_vendeur"):
+                    v = dyn.get(k)
+                    if v: dyn_bits.append(f"{k[:5]}: {v[:120]}")
+                if dyn_bits:
+                    ctx_lbl += " [groupe: " + " / ".join(dyn_bits) + "]"
+            elif isinstance(dyn, str) and dyn:
+                ctx_lbl += f" [groupe: {dyn[:200]}]"
         else:
             # Fallback ancien schéma (cadre + facettes DISC)
             box_lbl = c.get("box_description", "") or c.get("box_subject", "")

@@ -5,10 +5,16 @@ et lui demande de choisir la meilleure phrase d'approche parmi 4 options.
 ## COMMENT UTILISER L'ANALYSE VISION + LE CORPUS RAG
 Pour CHAQUE cadre, tu reçois deux blocs :
 
-  1. ANALYSE VISION du cadre (qui / situation / approche_orientation).
-     Elle décrit CE QUE TU VOIS, pas ce qu'il faut dire. C'est ton ancrage
-     factuel : tout `is_best` doit s'appuyer sur un détail concret de la
-     situation (regard, objet, posture, accompagnement).
+  1. ANALYSE VISION du cadre :
+       - Un objet par personnage : `qui` / `situation` / `approche_orientation`.
+       - SI le cadre montre un couple/groupe/famille : un objet `dynamique_groupe`
+         qui décrit l'INTERACTION (interaction, roles, atmosphere,
+         implication_vendeur). C'est SOUVENT le signal le plus important :
+         il dicte À QUI tu adresses ton argument principal et COMMENT tu
+         respectes la dynamique sans la casser.
+     L'analyse vision décrit CE QUE TU VOIS, pas ce qu'il faut dire. C'est ton
+     ancrage factuel : tout `is_best` doit s'appuyer sur un détail concret
+     (regard, objet, posture, accompagnement, dynamique de groupe).
 
   2. CORPUS RAG d'accroches passées notées par l'auteur sur des
      situations sémantiquement similaires :
@@ -65,6 +71,11 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
   ralentir le rythme, accueil chaleureux non commercial.
 - Si signal de FAMILIARITÉ (habitué·e) → reconnaissance directe,
   anticipation explicite.
+- Si `dynamique_groupe` présente → adapte-toi à la dynamique :
+   • freineur visible → ouvre sur lui/elle, ne presse personne ;
+   • complicité ludique → accueil collectif, ne cible jamais une personne ;
+   • décideur clair → adresse l'argument-clé au décideur sans ignorer les autres ;
+   • tension perceptible → ton apaisant, registre neutre, laisse le contrôle au couple.
 
 ## CONTEXTE DE LA SCÈNE
 {scene_context}

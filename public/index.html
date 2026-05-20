@@ -1552,6 +1552,36 @@
   }
   body.mode-mobile .frames-pane-row > .btn { max-width: none; }
 
+  /* Modale RAG : 3 blocs (amorcer / download / upload) */
+  .rag-block {
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+  }
+  .rag-block:last-child { margin-bottom: 0; }
+  .rag-block-title {
+    font-size: 12px; letter-spacing: 0.05em;
+    color: rgba(212,184,122,0.95); font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .rag-block-help {
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    line-height: 1.45; margin: 0 0 10px 0;
+  }
+  .rag-dl-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .rag-dl-row .rag-dl-name { flex: 1; color: rgba(255,255,255,0.85); font-weight: 500; }
+  .rag-dl-row .rag-dl-meta { color: rgba(255,255,255,0.45); font-size: 10px; }
+  .rag-dl-row .btn { padding: 4px 10px; font-size: 11px; min-height: 28px; }
+
   /* ─── Tracé : 2 groupes compacts (Niveau 1 blanc / Niveau 2 or) ─── */
   .trace-groups {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -1946,7 +1976,9 @@
       </div>
       <button class="btn" id="save-scene">Sauver comme module</button>
       <button class="btn" id="open-history" style="margin-top:6px;">↶ Historique des modifications</button>
-      <button class="btn" id="bootstrap-corpus" style="margin-top:6px;" title="Amorçage initial UNIQUEMENT : marque les questions/quêtes actuellement dans tes modules comme exemples positifs (good) dans le corpus RAG. Tes futures notes ★ ✦ ✗ enrichiront ensuite le corpus avec les BONNES ET MAUVAISES réponses (good + nuanced + refused), pour que GPT apprenne à la fois à reproduire ce qui marche ET à éviter ce qui ne marche pas.">🌱 Amorcer le corpus RAG</button>
+      <button class="btn" id="open-rag-menu" style="margin-top:6px;" title="Gérer le corpus RAG : amorcer depuis les modules existants, télécharger un fichier corrections, ou en uploader un.">📚 RAG</button>
+      <!-- Ghost pour compat (ancien id du bouton « Amorcer ») -->
+      <button id="bootstrap-corpus" type="button" style="display:none;" aria-hidden="true"></button>
       <a class="btn" href="library.html" style="text-decoration:none;display:block;text-align:center;margin-top:6px;">📚 Bibliothèque</a>
     </div>
 
@@ -2167,6 +2199,63 @@
     </label>
     <!-- Liste d'événements remplie par app.js / sfx.js -->
     <div id="sounds-events-list"></div>
+  </div>
+</div>
+
+<!-- ----- Modal: gestion RAG (amorcer / download / upload) ----- -->
+<div id="rag-menu-modal" class="modal-overlay">
+  <div class="modal">
+    <button class="modal-close-x" id="rag-menu-cancel" type="button" aria-label="Fermer">×</button>
+    <h3>📚 Corpus RAG</h3>
+    <p style="color:rgba(255,255,255,0.65);margin:6px 0 16px 0;line-height:1.45;">
+      Le RAG est enrichi automatiquement à chaque clic « Valider » sur une
+      notation. Ces outils sont là pour les opérations exceptionnelles
+      (sauvegarde, restauration, amorçage d'un module manuel).
+    </p>
+
+    <!-- ─── Bloc 1 : Amorcer ─────────────────────────────────────── -->
+    <div class="rag-block">
+      <div class="rag-block-title">🌱 Amorcer depuis les modules</div>
+      <p class="rag-block-help">
+        Transforme les questions/quêtes actuellement présentes dans tes
+        modules en entrées « good » du corpus. Utile UNIQUEMENT si tu as
+        saisi du contenu à la main hors flux GPT. Idempotent (skip les
+        items déjà bootstrappés).
+      </p>
+      <button class="btn" id="rag-bootstrap-btn" type="button">Amorcer maintenant</button>
+    </div>
+
+    <!-- ─── Bloc 2 : Download ────────────────────────────────────── -->
+    <div class="rag-block">
+      <div class="rag-block-title">⬇️ Télécharger un fichier RAG</div>
+      <p class="rag-block-help">
+        Sauvegarde locale d'un des 4 fichiers du corpus :
+        corrections_n1.jsonl (entries + embeddings), corrections_n1.txt
+        (mirroir lisible), idem pour n2.
+      </p>
+      <div id="rag-download-list" style="display:flex;flex-direction:column;gap:6px;">
+        <!-- rempli dynamiquement -->
+      </div>
+    </div>
+
+    <!-- ─── Bloc 3 : Upload ──────────────────────────────────────── -->
+    <div class="rag-block">
+      <div class="rag-block-title">⬆️ Importer un fichier RAG</div>
+      <p class="rag-block-help">
+        Remplace un fichier corrections existant par celui que tu choisis.
+        Une sauvegarde .pre-upload.bak est créée automatiquement.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="rag-upload-target" style="flex:1;min-width:180px;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:6px;font-family:inherit;font-size:12px;">
+          <option value="1|jsonl">corrections_n1.jsonl</option>
+          <option value="1|txt">corrections_n1.txt</option>
+          <option value="2|jsonl">corrections_n2.jsonl</option>
+          <option value="2|txt">corrections_n2.txt</option>
+        </select>
+        <input type="file" id="rag-upload-input" accept=".jsonl,.txt,.json" style="flex:2;min-width:200px;font-size:12px;color:#bbb;">
+        <button class="btn primary" id="rag-upload-btn" type="button">Importer</button>
+      </div>
+    </div>
   </div>
 </div>
 

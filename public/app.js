@@ -3821,6 +3821,116 @@ $('ra-launch')?.addEventListener('click', async () => {
 
 $('regen-all-boxes')?.addEventListener('click', openRegenAllModal);
 
+// ─── Menu RAG : Amorcer / Download / Upload ────────────────────────
+async function openRagMenu() {
+  if (!sceneState.id && !confirm('Aucun module chargé. Continuer quand même ?')) return;
+  $('rag-menu-modal').classList.add('shown');
+  await _renderRagDownloadList();
+}
+function closeRagMenu() { $('rag-menu-modal').classList.remove('shown'); }
+
+async function _renderRagDownloadList() {
+  const list = $('rag-download-list');
+  list.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:11px;">Chargement…</div>';
+  try {
+    const r = await fetch('/api/rag/list');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    list.innerHTML = '';
+    for (const f of (j.files || [])) {
+      const row = document.createElement('div');
+      row.className = 'rag-dl-row';
+      const sizeKb = f.size ? (f.size / 1024).toFixed(1) + ' Ko' : '—';
+      const entries = f.format === 'jsonl' && f.exists ? ` · ${f.n_entries} entrées` : '';
+      const status = f.exists
+        ? `<span class="rag-dl-meta">${sizeKb}${entries}</span>`
+        : `<span class="rag-dl-meta" style="color:rgba(255,184,77,0.65);">vide</span>`;
+      row.innerHTML = `
+        <span class="rag-dl-name">${escapeHtmlAttr(f.name)}</span>
+        ${status}
+        <button class="btn" type="button" ${f.exists ? '' : 'disabled'}>Télécharger</button>
+      `;
+      row.querySelector('button').addEventListener('click', () => {
+        // Téléchargement via lien : le navigateur déclenche le save
+        const url = `/api/rag/download?level=${f.level}&format=${f.format}`;
+        const a = document.createElement('a');
+        a.href = url; a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+      });
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.innerHTML = `<div style="color:rgba(255,140,140,0.85);font-size:11px;">Erreur : ${escapeHtmlAttr(e.message)}</div>`;
+  }
+}
+
+$('open-rag-menu')?.addEventListener('click', openRagMenu);
+$('rag-menu-cancel')?.addEventListener('click', closeRagMenu);
+$('rag-menu-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('rag-menu-modal')) closeRagMenu();
+});
+
+// Bouton « Amorcer maintenant » (dans la modale RAG)
+$('rag-bootstrap-btn')?.addEventListener('click', async () => {
+  if (!confirm(
+    'AMORÇAGE DU CORPUS DEPUIS LES MODULES\n\n' +
+    'Marque les questions N1 + quêtes N2 actuellement présentes dans tes modules ' +
+    'comme exemples « good » dans le corpus RAG. Calcule un embedding par entrée.\n\n' +
+    'Idempotent : les items déjà amorcés sont ignorés. Utile uniquement si tu as ' +
+    'saisi du contenu À LA MAIN hors flux GPT (sinon les notations courantes suffisent).'
+  )) return;
+  showGptOverlay('Calcul des embeddings et écriture des corrections…');
+  try {
+    const r = await fetch('/api/bootstrap-corpus', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({}),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const lines = Object.entries(j.report || {}).map(([sid, r]) =>
+      `· ${sid} : ${r.n1_added} questions N1 + ${r.n2_added} quêtes N2`).join('\n');
+    alert(`✓ Corpus RAG amorcé\n\n${lines || '(rien à ajouter)'}`);
+    await _renderRagDownloadList();  // refresh sizes
+  } catch (e) {
+    alert('Bootstrap échoué : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
+
+// Bouton « Importer » (Upload)
+$('rag-upload-btn')?.addEventListener('click', async () => {
+  const target = $('rag-upload-target').value;
+  const input = $('rag-upload-input');
+  const file = input?.files?.[0];
+  if (!file) { alert('Choisis d\'abord un fichier à importer.'); return; }
+  const [level, fmt] = target.split('|');
+  if (!confirm(
+    `IMPORTER ${file.name} → corrections_n${level}.${fmt} ?\n\n` +
+    `Cette action REMPLACE le fichier serveur. Une sauvegarde .pre-upload.bak ` +
+    `est créée automatiquement avant l'écrasement.\n\nTaille : ${(file.size/1024).toFixed(1)} Ko`
+  )) return;
+  showGptOverlay('Import du fichier RAG…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    const r = await fetch(`/api/rag/upload?level=${level}&format=${fmt}`, {
+      method: 'POST', body: fd,
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const entriesInfo = j.entries !== null ? ` (${j.entries} entrées valides)` : '';
+    alert(`✓ Importé : ${j.file} · ${j.bytes} octets${entriesInfo}`);
+    input.value = '';
+    await _renderRagDownloadList();
+  } catch (e) {
+    alert('Import échoué : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
+
+// Legacy bootstrap-corpus (ghost) — préservé pour compat
 $('bootstrap-corpus')?.addEventListener('click', async () => {
   if (!confirm(
     'AMORÇAGE INITIAL DU CORPUS\n\n' +

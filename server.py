@@ -873,6 +873,52 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(400, {"error": "invalid JSON"})
             return None
 
+    # ─── Helpers RAG : list / download ────────────────────────────────
+    def _rag_files_info(self):
+        """Renvoie pour chaque fichier RAG : level, format, name, size,
+        n_entries, exists. Utilisé par /api/rag/list."""
+        out = []
+        for level in (1, 2):
+            for fmt in ("jsonl", "txt"):
+                p = ROOT / "data" / f"corrections_n{level}.{fmt}"
+                info = {
+                    "level": level, "format": fmt, "name": p.name,
+                    "exists": p.exists(),
+                    "size": p.stat().st_size if p.exists() else 0,
+                    "n_entries": 0,
+                }
+                if p.exists() and fmt == "jsonl":
+                    try:
+                        info["n_entries"] = sum(
+                            1 for line in p.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        )
+                    except Exception:
+                        pass
+                out.append(info)
+        return out
+
+    def _send_rag_download(self, level: int, fmt: str) -> None:
+        """Renvoie le fichier RAG demandé en attachment téléchargeable."""
+        p = ROOT / "data" / f"corrections_n{level}.{fmt}"
+        if not p.exists():
+            self._send_json(404, {"error": f"fichier RAG inexistant : {p.name}"})
+            return
+        try:
+            data = p.read_bytes()
+        except Exception as e:
+            self._send_json(500, {"error": f"read failed: {e}"}); return
+        ctype = "application/x-ndjson" if fmt == "jsonl" else "text/plain; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{p.name}"',
+        )
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
         if path == "/api/status":
@@ -956,6 +1002,24 @@ class Handler(SimpleHTTPRequestHandler):
             shutil.rmtree(base)
             self._send_json(200, {"deleted": sid})
             return
+
+        # ─── RAG : liste des fichiers + download ─────────────────────
+        if path == "/api/rag/list":
+            self._send_json(200, {"files": self._rag_files_info()})
+            return
+        if path == "/api/rag/download":
+            from urllib.parse import urlparse, parse_qs  # noqa
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                level = int((qs.get("level") or ["1"])[0])
+                fmt = (qs.get("format") or ["jsonl"])[0]
+            except Exception:
+                self._send_json(400, {"error": "level/format invalides"}); return
+            if level not in (1, 2) or fmt not in ("jsonl", "txt"):
+                self._send_json(400, {"error": "level ∈ {1,2}, format ∈ {jsonl,txt}"}); return
+            self._send_rag_download(level, fmt)
+            return
+
         self.send_error(404)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -1084,6 +1148,62 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"error": f"describe failed: {e}"}); return
             self._send_json(200, {"report": report})
+            return
+
+        # ─── RAG : upload d'un fichier corrections (replace) ─────────
+        # POST /api/rag/upload?level=1|2&format=jsonl|txt
+        # Body : multipart (champ 'file') OU raw text/plain.
+        # ÉCRASE le fichier serveur. Backup auto en .pre-upload.bak.
+        if path == "/api/rag/upload":
+            from urllib.parse import urlparse, parse_qs  # noqa
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                level = int((qs.get("level") or ["1"])[0])
+                fmt = (qs.get("format") or ["jsonl"])[0]
+            except Exception:
+                self._send_json(400, {"error": "level/format invalides"}); return
+            if level not in (1, 2) or fmt not in ("jsonl", "txt"):
+                self._send_json(400, {"error": "level ∈ {1,2}, format ∈ {jsonl,txt}"}); return
+            ctype = self.headers.get("Content-Type", "")
+            body = self._read_body()
+            try:
+                if "multipart" in ctype:
+                    parts = _parse_multipart(body, ctype)
+                    data = parts.get("file") or next(iter(parts.values()), b"")
+                else:
+                    data = body
+                if not data:
+                    self._send_json(400, {"error": "fichier vide ou champ 'file' absent"})
+                    return
+                # Validation minimale pour jsonl : chaque ligne doit être un JSON valide
+                if fmt == "jsonl":
+                    text = data.decode("utf-8", errors="replace")
+                    n_ok = 0
+                    for ln_no, line in enumerate(text.splitlines(), 1):
+                        s = line.strip()
+                        if not s:
+                            continue
+                        try:
+                            json.loads(s)
+                            n_ok += 1
+                        except json.JSONDecodeError as e:
+                            self._send_json(400, {
+                                "error": f"ligne {ln_no} invalide : {e.msg}",
+                            }); return
+                else:
+                    n_ok = None  # txt : pas de validation structurelle
+                target = ROOT / "data" / f"corrections_n{level}.{fmt}"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    backup = target.with_suffix(target.suffix + ".pre-upload.bak")
+                    target.replace(backup)
+                target.write_bytes(data)
+            except Exception as e:
+                self._send_json(500, {"error": f"upload failed: {e}"}); return
+            self._send_json(200, {
+                "ok": True, "file": target.name,
+                "bytes": len(data), "entries": n_ok,
+            })
             return
 
         # Seed initial du corpus RAG avec des entrées synthétiques inspirées

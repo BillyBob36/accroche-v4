@@ -1121,17 +1121,81 @@
     opacity: 0.85;
   }
   /* Petit badge texte pour rappeler le statut "best" / "distracteur" en
-     en-tête de chaque choix dans quest-modal. */
+     en-tête de chaque choix dans quest-modal. Placé EN HAUT du choix-row
+     (pas à gauche) pour libérer toute la largeur pour le champ texte. */
   .choice-kind-badge {
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: rgba(255,255,255,0.45);
-    margin-left: 6px;
+    padding: 4px 0 2px 4px;
   }
   .choice-kind-badge.best {
     color: rgba(212,184,122,0.95);
     font-weight: 600;
+  }
+  /* Dans la quest-modal, les choix sont empilés en colonne pour que
+     badge → champ texte → rating → explication → rating se suivent
+     verticalement, sans squeeze de la largeur. */
+  #quest-modal .choice-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+  }
+  #quest-modal .choice-row > .choice-del {
+    position: absolute;
+    top: 6px; right: 6px;
+    align-self: auto;
+  }
+  #quest-modal .choice-row > .choice-body {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Volets rétractables (Fiche client / Titre+intro) dans la quest-modal */
+  .qu-collapse {
+    margin: 10px 0 14px;
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(0,0,0,0.20);
+  }
+  .qu-collapse > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 10px 14px;
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: rgba(255,255,255,0.75);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+  }
+  .qu-collapse > summary::-webkit-details-marker { display: none; }
+  .qu-collapse > summary::before {
+    content: '›';
+    color: rgba(255,255,255,0.45);
+    font-size: 16px;
+    transition: transform 200ms;
+    flex-shrink: 0;
+  }
+  .qu-collapse[open] > summary::before { transform: rotate(90deg); }
+  .qu-collapse > summary:hover { color: white; }
+  .qu-collapse > *:not(summary) {
+    padding: 0 14px 14px;
+  }
+  /* Variante "Fiche client" : accent bleu (cohérent avec l'ancien encart). */
+  .qu-fiche-collapse {
+    border-color: rgba(80,180,255,0.30);
+    background: rgba(80,180,255,0.06);
+  }
+  .qu-fiche-collapse > summary {
+    color: rgba(140,200,255,0.95);
   }
 
   /* Sous-onglets du modal Missions */
@@ -2190,15 +2254,12 @@
       </select>
     </div>
 
-    <!-- Fiche client : analyse vision du cadre associé. Apparaît dès
-         qu'un cadre est sélectionné. Lecture seule — informe l'auteur
-         sur la perception GPT du personnage (signaux, niveau social,
-         DISC, code luxe) pour qu'il puisse juger si l'approche
-         commerciale proposée est cohérente. -->
-    <div id="qu-fiche-client" style="display:none;margin:10px 0 14px;padding:14px;background:rgba(80,180,255,0.06);border:1px solid rgba(80,180,255,0.30);border-radius:8px;font-size:11px;color:rgba(255,255,255,0.85);">
-      <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(140,200,255,0.95);margin-bottom:8px;font-weight:600;">Fiche client (analyse vision)</div>
-      <div id="qu-fiche-content" style="line-height:1.5;"></div>
-    </div>
+    <!-- Fiche client : analyse vision du cadre associé. Rétractable
+         (fermée par défaut) pour ne pas saturer l'écran. -->
+    <details id="qu-fiche-client" class="qu-collapse qu-fiche-collapse" style="display:none;">
+      <summary>Fiche client (analyse vision)</summary>
+      <div id="qu-fiche-content" style="line-height:1.5;padding-top:8px;"></div>
+    </details>
 
     <!-- Bandeau de génération assistée : apparaît dès qu'un cadre est
          sélectionné en mode "Nouvelle quête" / "+ Variante". -->
@@ -2212,14 +2273,19 @@
       </div>
     </div>
 
-    <div class="field">
-      <div class="field-row"><span class="field-label">Titre court</span></div>
-      <input type="text" id="qu-title" placeholder="ex: La grand-mère">
-    </div>
-    <div class="field">
-      <div class="field-row"><span class="field-label">Texte d'introduction (affiché sur l'image 1)</span></div>
-      <textarea id="qu-intro" placeholder="ex: Une cliente élégante observe attentivement un collier exposé en vitrine. Elle semble hésiter…"></textarea>
-    </div>
+    <!-- Titre court + texte d'introduction regroupés dans un volet
+         rétractable « Titre et intro » (fermé par défaut). -->
+    <details class="qu-collapse qu-title-collapse" open>
+      <summary>Titre et intro</summary>
+      <div class="field">
+        <div class="field-row"><span class="field-label">Titre court</span></div>
+        <input type="text" id="qu-title" placeholder="ex: La grand-mère">
+      </div>
+      <div class="field">
+        <div class="field-row"><span class="field-label">Texte d'introduction (affiché sur l'image 1)</span></div>
+        <textarea id="qu-intro" placeholder="ex: Une cliente élégante observe attentivement un collier exposé en vitrine. Elle semble hésiter…"></textarea>
+      </div>
+    </details>
     <div style="font-size:11px;color:rgba(255,255,255,0.5);background:rgba(80,180,255,0.06);border-left:3px solid rgba(80,180,255,0.4);padding:10px 12px;border-radius:4px;line-height:1.5;margin-bottom:6px;">
       <strong style="color:rgba(140,200,255,0.95);">Images de la quête</strong> · L'image 1 (perso + bokeh)
       et l'image 2 (face caméra) viennent automatiquement du cadre associé.

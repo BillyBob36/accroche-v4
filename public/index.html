@@ -1041,10 +1041,13 @@
     line-height: 1;
   }
   .field-rate-row .rate-btn .lbl {
-    /* Tooltip révélé au hover : pop-up flottant au-dessus du bouton */
+    /* Tooltip révélé au hover : ancré sur le BORD GAUCHE du bouton et
+       extension vers la droite (white-space: normal pour s'adapter à la
+       largeur du modal). Évite le clip par la bordure gauche du modal
+       quand les boutons sont près du bord. */
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 50%; transform: translateX(-50%);
+    left: 0;
     background: rgba(20,20,22,0.97);
     border: 1px solid rgba(212,184,122,0.45);
     color: rgba(255,245,220,0.95);
@@ -1052,7 +1055,9 @@
     border-radius: 6px;
     font: inherit;
     font-size: 11px; line-height: 1.4;
-    white-space: nowrap;
+    white-space: normal;
+    max-width: 320px;
+    width: max-content;
     pointer-events: none;
     opacity: 0;
     transition: opacity 150ms;
@@ -1061,23 +1066,18 @@
   }
   .field-rate-row .rate-btn:hover .lbl { opacity: 1; }
   .field-rate-row .rate-btn .lbl::after {
-    /* Petite flèche sous le tooltip */
+    /* Petite flèche sous le tooltip — alignée sur le BORD GAUCHE du tooltip
+       (cohérent avec left: 0 du parent), pointant vers le bouton. */
     content: "";
     position: absolute;
-    top: 100%; left: 50%;
-    transform: translateX(-50%);
+    top: 100%; left: 12px;
     border: 5px solid transparent;
     border-top-color: rgba(212,184,122,0.45);
   }
-  .field-rate-row .rate-status {
-    flex: 1;
-    font-size: 11px; color: rgba(255,255,255,0.55);
-    font-style: italic;
-  }
-  .field-rate-row.has-rating .rate-status {
-    color: rgba(212,184,122,0.85);
-    font-style: normal;
-  }
+  /* Label persistant à côté des boutons : MASQUÉ — la couleur du bouton
+     (is-on vert / orange / rouge) suffit comme indicateur. Le tooltip
+     hover reste disponible pour ceux qui veulent rappeler le sens. */
+  .field-rate-row .rate-status { display: none; }
   /* Bloc commentaire + Valider/Annuler, caché par défaut. S'ouvre au
      clic d'un ★/✦/✗. Valider POST le rating au RAG individuellement. */
   .field-rate-input {

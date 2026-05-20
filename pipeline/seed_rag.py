@@ -26,7 +26,7 @@ from generate import append_correction  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-SEED_VERSION = 2  # bump à chaque évolution majeure du schéma seed
+SEED_VERSION = 3  # bump à chaque évolution majeure du schéma seed
 MARKER = DATA / f"_seeded_v{SEED_VERSION}.flag"
 
 
@@ -135,13 +135,21 @@ def _quest_seed_block(qui, situation, approche, tags, title, intro,
     """Renvoie une liste d'entrées correction N2 pour une situation.
     `distractors` = liste de tuples (rating, text, expl, label) pour chacun
     des 3 distracteurs (rating ∈ {nuanced, refused}).
-    `dynamique_groupe` = dict optionnel pour les cadres multi-personnages."""
+    `dynamique_groupe` = dict optionnel pour les cadres multi-personnages.
+
+    NB : le paramètre `approche` est ignoré au stockage (gardé pour rétro-compat
+    de signature) — la vision ne porte plus de champ prescriptif depuis v3.
+    De même on retire `implication_vendeur` des dicts dynamique_groupe au
+    passage, pour respecter le principe vision-observe / RAG-prescrit."""
     base = {
         "qui": qui, "situation": situation,
-        "approche_orientation": approche, "tags": tags,
+        "tags": tags,
     }
     if dynamique_groupe:
-        base["dynamique_groupe"] = dynamique_groupe
+        base["dynamique_groupe"] = {
+            k: v for k, v in dynamique_groupe.items()
+            if k != "implication_vendeur"
+        }
     out = []
     # Titre + intro = "good" (servent d'inspiration de phrasage)
     out.append({**base, "kind": "field_title", "rating": "good",

@@ -363,9 +363,9 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         "  • S'IL Y A PLUSIEURS PERSONNES (couple, amis, famille, collègues), "
         "ajoute aussi un objet `dynamique_groupe` qui décrit l'interaction "
         "entre elles — c'est SOUVENT le signal le plus important pour la vente.\n"
-        "  • AUCUNE accroche concrète, AUCUNE phrase à prononcer. C'est le rôle "
-        "du coach marketing en aval (qui pioche dans la mémoire RAG). Toi tu "
-        "observes et tu donnes une ORIENTATION typologique d'adresse.\n"
+        "  • AUCUNE prescription, AUCUNE recommandation d'action, AUCUNE accroche, "
+        "AUCUN conseil au vendeur. Tu DÉCRIS ce que tu vois, point. Le coach "
+        "marketing en aval décidera quoi faire à partir de la mémoire RAG.\n"
         "  • Vocabulaire factuel et concret. Interdit : « élégant », « semble », "
         "« paraît », « a l'air ». Autorisé : « manteau navy », « regarde vers la "
         "vitrine droite », « tient son sac à deux mains ».\n"
@@ -380,20 +380,16 @@ def describe_box(scene_id: str, box_id: str, force: bool = False) -> str:
         '      "qui": "1 phrase. Genre + tranche d\'âge + accompagnement + style visuel + lecture sociale courte. '
         'Ex: \\"Femme 35-45, solo, soignée, code discrétion luxe\\" ; \\"Homme ~40 ans pensif, costume sobre, mains croisées\\" ; \\"Dame senior 65+, manteau beige, sac modeste\\".",\n'
         '      "situation": "1 phrase. Ce qu\'il/elle FAIT À CET INSTANT : phase (entrée / exploration / focus produit / hésitation / sortie), regard, posture, intention lisible, signaux d\'ouverture/défensive/pression. '
-        'Ex: \\"Exploration patiente, regard appuyé sur la vitrine droite, posture ouverte\\" ; \\"Sourcils froncés, mains dans le dos, regard interne sur les bagues\\".",\n'
-        '      "approche_orientation": "1 phrase. Recommandation TYPOLOGIQUE d\'adresse (ton, registre, timing, distance, familiarité). Aucune phrase concrète, aucune accroche. '
-        'Ex: \\"Ton sobre, vouvoiement chaleureux, respect du temps (~20-30s), amorce factuelle sur ce qu\'elle regarde\\"."\n'
+        'Ex: \\"Exploration patiente, regard appuyé sur la vitrine droite, posture ouverte\\" ; \\"Sourcils froncés, mains dans le dos, regard interne sur les bagues\\"."\n'
         "    }\n"
         "  ],\n"
         '  "dynamique_groupe": {\n'
         '    "interaction": "1 phrase. Comment les personnes interagissent en cet instant : qui parle/regarde qui, complicité ou tension, gestes partagés ou non. '
         'Ex: \\"Elle le regarde lui plutôt que les pièces, attend qu\'il prenne la parole\\" ; \\"Les trois amies se passent des commentaires complices en pointant des pièces\\".",\n'
-        '    "roles": "1 phrase. Qui joue quel rôle : décideur visible, freineur, prescripteur, accompagnant passif, payeur probable, suiveur. '
-        'Ex: \\"Il est le freineur pensif, elle l\'attend et valide\\" ; \\"L\'une mène l\'exploration, les deux autres suivent et commentent\\".",\n'
+        '    "roles": "1 phrase. Qui joue quel rôle visible : décideur, freineur, prescripteur, accompagnant passif, suiveur. Décris ce que tu OBSERVES, ne prescris pas. '
+        'Ex: \\"Lui = visage pensif et mains croisées, en charge mentale de la décision. Elle = sourire et regard porté sur lui, en attente\\".",\n'
         '    "atmosphere": "1 phrase. Climat émotionnel observable : complicité joyeuse, tension feutrée, hésitation partagée, indifférence respectueuse, etc. '
-        'Ex: \\"Hésitation calme et bienveillante\\" ; \\"Énergie ludique et complice\\".",\n'
-        '    "implication_vendeur": "1 phrase. Conséquence concrète pour l\'approche : à qui adresser l\'argument clé, comment respecter la dynamique, quoi ne PAS faire vis-à-vis du groupe. '
-        'Ex: \\"Ouvrir sur le freineur (lui) sans presser la femme — l\'aborder à elle d\'abord casserait la dynamique\\" ; \\"Accueil collectif, surtout ne pas cibler une seule personne au risque de briser la complicité\\"."\n'
+        'Ex: \\"Hésitation calme et bienveillante\\" ; \\"Énergie ludique et complice\\"."\n'
         "  },\n"
         '  "tags": ["...4 à 8 facettes courtes pour le matching sémantique..."],\n'
         '  "resume": "Une phrase ≤ 30 mots qui résume globalement la scène (utilisée comme aperçu humain)."\n'

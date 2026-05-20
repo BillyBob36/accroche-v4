@@ -5,16 +5,15 @@ et lui demande de choisir la meilleure phrase d'approche parmi 4 options.
 ## COMMENT UTILISER L'ANALYSE VISION + LE CORPUS RAG
 Pour CHAQUE cadre, tu reçois deux blocs :
 
-  1. ANALYSE VISION du cadre :
-       - Un objet par personnage : `qui` / `situation` / `approche_orientation`.
+  1. ANALYSE VISION du cadre — PUREMENT OBSERVATIONNELLE :
+       - Un objet par personnage : `qui` / `situation`.
        - SI le cadre montre un couple/groupe/famille : un objet `dynamique_groupe`
-         qui décrit l'INTERACTION (interaction, roles, atmosphere,
-         implication_vendeur). C'est SOUVENT le signal le plus important :
-         il dicte À QUI tu adresses ton argument principal et COMMENT tu
-         respectes la dynamique sans la casser.
-     L'analyse vision décrit CE QUE TU VOIS, pas ce qu'il faut dire. C'est ton
-     ancrage factuel : tout `is_best` doit s'appuyer sur un détail concret
-     (regard, objet, posture, accompagnement, dynamique de groupe).
+         avec `interaction`, `roles`, `atmosphere`. C'est ton ancrage pour
+         comprendre la scène, mais AUCUNE indication d'action n'y est donnée.
+     L'analyse vision décrit CE QUE TU VOIS, point. C'est dans la mémoire RAG
+     (bloc 2 ci-dessous) que tu trouves la prescription concrète. Tout
+     `is_best` doit s'appuyer sur un détail concret de la vision (regard,
+     objet, posture, accompagnement, dynamique).
 
   2. CORPUS RAG d'accroches passées notées par l'auteur sur des
      situations sémantiquement similaires :
@@ -63,7 +62,8 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
 - Part TOUJOURS d'un détail observable concret du cadre (objet, regard,
   accessoire, posture) cité explicitement ou paraphrasé.
 - Ouvre sans presser. Respecte l'autonomie du client.
-- Ton et registre cohérents avec l'`approche_orientation` du cadre.
+- Ton et registre déduits de la SITUATION observée + des accroches ★
+  similaires dans le RAG (pas d'instruction d'approche externe).
 - Si signal de DISCRÉTION → pas de flatterie ouverte, pas de prix,
   pas de « cadeau ».
 - Si signal de PRESSION → efficacité, 2 options max, pas d'errance.

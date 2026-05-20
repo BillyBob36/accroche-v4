@@ -145,13 +145,17 @@ def _build_embed_input(entry: dict) -> str:
     reste accepté en fallback pour les entrées créées avant la migration."""
     parts = []
     # NOUVEAU schéma : situation décrite (langage naturel)
-    for k in ("qui", "situation", "approche_orientation"):
+    # Note : `approche_orientation` (legacy) et `implication_vendeur` (legacy)
+    # sont volontairement EXCLUS — c'était de la prescription côté vision,
+    # désormais réservée à GPT-RAG en aval.
+    for k in ("qui", "situation"):
         v = entry.get(k)
         if v: parts.append(f"{k}: {v}")
-    # Dynamique de groupe (cadres multi-personnages)
+    # Dynamique de groupe (cadres multi-personnages) — facettes purement
+    # observationnelles uniquement.
     dyn = entry.get("dynamique_groupe")
     if isinstance(dyn, dict):
-        for k in ("interaction", "roles", "atmosphere", "implication_vendeur"):
+        for k in ("interaction", "roles", "atmosphere"):
             v = dyn.get(k)
             if v: parts.append(f"dyn_{k}: {v}")
     elif isinstance(dyn, str) and dyn:
@@ -231,10 +235,13 @@ def format_corrections_for_prompt(corrections: list[dict], header: str = "") -> 
             ctx_lbl += "]"
             # Si la correction porte aussi une dynamique_groupe, on l'ajoute
             # pour donner à GPT le contexte d'interaction (multi-personnages).
+            # On NE PROPAGE PAS implication_vendeur — c'est de la prescription
+            # qui doit venir du RAG (les exemples notés), pas être martelée
+            # dans le contexte à chaque génération.
             dyn = c.get("dynamique_groupe")
             if isinstance(dyn, dict):
                 dyn_bits = []
-                for k in ("interaction", "roles", "implication_vendeur"):
+                for k in ("interaction", "roles", "atmosphere"):
                     v = dyn.get(k)
                     if v: dyn_bits.append(f"{k[:5]}: {v[:120]}")
                 if dyn_bits:

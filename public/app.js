@@ -1809,13 +1809,12 @@ function refreshFicheClient(boxId) {
     ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${tags.map(t => `<span style="display:inline-flex;align-items:center;background:rgba(212,184,122,0.10);border:1px solid rgba(212,184,122,0.35);color:rgba(232,210,160,0.95);padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:0.03em;">${escapeHtmlAttr(String(t))}</span>`).join('')}</div>`
     : '';
   const persosHtml = (analysis.personnages || []).map((p, i) => {
-    // NOUVEAU schéma simplifié : qui / situation / approche_orientation
+    // Schéma observationnel pur : qui / situation seulement.
+    // Aucun champ prescriptif (l'approche est gérée par GPT+RAG en aval).
     const qui = p.qui || p.physique || '';
     const situation = p.situation || '';
-    const approche = p.approche_orientation || '';
     // Fallback ancien schéma si nouveaux champs absents
-    if (!qui && !situation && !approche) {
-      const sig = p.signaux || {};
+    if (!qui && !situation) {
       return `
         <div style="margin-top:${i>0?10:0}px;padding-top:${i>0?10:0}px;${i>0?'border-top:1px solid rgba(255,255,255,0.10);':''}color:rgba(255,255,255,0.55);font-style:italic;">
           Analyse au format ancien — clique « 👁 Analyser » pour la moderniser.
@@ -1828,18 +1827,18 @@ function refreshFicheClient(boxId) {
         <div style="font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Personne ${i+1}</div>
         ${facetLine('Qui', qui)}
         ${facetLine('Situation', situation)}
-        ${facetLine('Comment l\'aborder', approche)}
       </div>`;
   }).join('');
   // Bloc dynamique de groupe (cadres multi-personnages)
   const dyn = analysis.dynamique_groupe;
   let dynHtml = '';
   if (dyn && typeof dyn === 'object') {
+    // Schéma observationnel : interaction / rôles / atmosphère seulement.
+    // implication_vendeur retiré (prescription = job du GPT+RAG en aval).
     const dynRows = [
       facetLine('Interaction', dyn.interaction),
       facetLine('Rôles', dyn.roles),
       facetLine('Atmosphère', dyn.atmosphere),
-      facetLine('Implication pour le vendeur', dyn.implication_vendeur),
     ].filter(Boolean).join('');
     if (dynRows) {
       dynHtml = `

@@ -1987,9 +1987,7 @@
     <!-- Panneau N2 : quêtes -->
     <div class="missions-pane" data-mpane="n2" style="display:none;">
       <div class="missions-genbar">
-        <button class="gen-btn" id="gen-n2">🪄 Générer</button>
-        <input type="number" class="count-input" id="gen-n2-count" value="1" min="1" max="20">
-        <label><input type="checkbox" id="gen-n2-perbox"> par cadre</label>
+        <button class="gen-btn" id="gen-n2" title="Choisir le ou les cadres pour lesquels générer une quête">🪄 Générer une ou plusieurs quêtes…</button>
         <div style="flex:1;"></div>
         <button class="gen-btn refine" id="refine-n2" title="Améliore le prompt à partir des corrections accumulées">🔧 Affiner le prompt</button>
       </div>
@@ -1997,6 +1995,9 @@
       <div class="modal-actions">
         <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
       </div>
+      <!-- Inputs fantômes pour préserver les listeners legacy doGenerate(2) -->
+      <input type="hidden" id="gen-n2-count" value="1">
+      <input type="hidden" id="gen-n2-perbox">
     </div>
   </div>
 </div>
@@ -2034,6 +2035,34 @@
     </label>
     <!-- Liste d'événements remplie par app.js / sfx.js -->
     <div id="sounds-events-list"></div>
+  </div>
+</div>
+
+<!-- ----- Modal: choisir les cadres pour générer une quête en lot -----
+     Ouverte depuis Missions → N2 → 🪄 Générer. Une cocheuse par cadre.
+     Pré-cochage intelligent : cadres SANS quête pré-cochés (combler les
+     manques) ; cadres AVEC quêtes décochés (l'utilisateur peut quand
+     même les ajouter pour créer une variante). -->
+<div id="gen-quests-modal" class="modal-overlay">
+  <div class="modal">
+    <button class="modal-close-x" id="gen-quests-cancel" type="button" aria-label="Fermer">×</button>
+    <h3>🪄 Générer une quête</h3>
+    <p style="color:rgba(255,255,255,0.65);margin:6px 0 14px 0;line-height:1.45;">
+      Coche les cadres pour lesquels tu veux générer une quête. Si une
+      quête existe déjà pour ce cadre, une variante supplémentaire sera
+      ajoutée. GPT-5.4 traite les cadres un par un.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="btn" id="gq-all" type="button">Tout cocher</button>
+      <button class="btn" id="gq-none" type="button">Tout décocher</button>
+      <button class="btn" id="gq-missing" type="button" title="Pré-cocher uniquement les cadres SANS quête">Sans quête uniquement</button>
+    </div>
+    <div id="gq-boxes-list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;padding:6px;background:rgba(0,0,0,0.20);border:1px solid rgba(255,255,255,0.08);border-radius:8px;">
+      <!-- populé dynamiquement -->
+    </div>
+    <div class="modal-actions" style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn primary" id="gq-launch" style="flex:1;" type="button">Lancer la génération</button>
+    </div>
   </div>
 </div>
 

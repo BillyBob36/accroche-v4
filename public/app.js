@@ -2473,27 +2473,51 @@ function renderQuestsList() {
   const box = $('quests-list-items');
   box.innerHTML = '';
   const quests = sceneState.meta?.quests || [];
-  if (!quests.length) {
-    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucune quête. Clique sur « + Nouvelle quête » ou « 🪄 Générer ».</div>';
+  const allBoxes = sceneState.meta?.boxes || [];
+  if (!allBoxes.length) {
+    box.innerHTML = '<div style="color:rgba(255,255,255,0.45);font-size:12px;padding:12px;text-align:center;">Aucun cadre dans la scène — trace au moins un cadre d\'abord.</div>';
     return;
   }
-  // Phase 3 : groupement par box_id (multi-variantes).
-  const byBox = new Map();
+  // Indexe les quêtes par box_id (peut être vide pour un cadre donné).
+  const questsByBox = new Map();
   quests.forEach((q, i) => {
-    const key = String(q.box_id || '?');
-    if (!byBox.has(key)) byBox.set(key, []);
-    byBox.get(key).push({ q, i });
+    const key = String(q.box_id || '');
+    if (!key) return;
+    if (!questsByBox.has(key)) questsByBox.set(key, []);
+    questsByBox.get(key).push({ q, i });
   });
-  const boxesById = Object.fromEntries((sceneState.meta?.boxes || []).map(b => [String(b.id), b]));
-  for (const [boxId, variants] of byBox) {
-    // Filtre refused
+  // Trie les cadres par ID croissant — ordre PRÉDICTIBLE pour l'utilisateur.
+  const sortedBoxes = [...allBoxes].sort((a, b) => {
+    const an = Number(a.id), bn = Number(b.id);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  for (const boxObj of sortedBoxes) {
+    const boxId = String(boxObj.id);
+    const variants = questsByBox.get(boxId) || [];
     const visible = variants.filter(v => v.q._rating !== 'refused');
-    if (!visible.length) continue;
+    const boxLabel = boxObj?.subject?.trim() || `cadre ${boxId}`;
     const group = document.createElement('div');
     group.className = 'ql-group';
-    const boxObj = boxesById[boxId];
-    const boxLabel = boxObj?.subject?.trim() || `cadre ${boxId}`;
-    // Header de groupe (cadre + dropdown variantes + + Variante)
+
+    if (!visible.length) {
+      // ─── Cadre sans quête — placeholder + CTA « Générer »
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(212,184,122,0.04);border:1px dashed rgba(212,184,122,0.30);border-radius:6px;margin-bottom:6px;';
+      head.innerHTML = `
+        <strong style="color:rgba(212,184,122,0.75);font-size:12px;flex:1;">CADRE ${escapeHtmlAttr(boxId)} · ${escapeHtmlAttr(boxLabel)}</strong>
+        <span style="font-size:11px;color:rgba(255,184,77,0.75);">⚠ aucune quête</span>
+        <button class="add-variant" title="Générer une quête pour ce cadre" style="background:rgba(212,184,122,0.20);border:1px solid rgba(212,184,122,0.55);color:rgba(240,210,150,1);padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">🪄 Générer</button>
+      `;
+      head.querySelector('.add-variant').addEventListener('click', () => {
+        _generateQuestsForBoxes([boxId]);
+      });
+      group.appendChild(head);
+      box.appendChild(group);
+      continue;
+    }
+
+    // ─── Cadre avec une ou plusieurs variantes — affichage normal
     let activeIdx = 0;
     const renderGroup = () => {
       const v = visible[activeIdx];
@@ -2504,14 +2528,12 @@ function renderQuestsList() {
         ? `<select class="variant-select" style="background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 6px;font-size:11px;">${visible.map((vv, k) => `<option value="${k}" ${k===activeIdx?'selected':''}>Variante ${k+1} / ${visible.length}</option>`).join('')}</select>`
         : `<span style="font-size:11px;color:rgba(255,255,255,0.45);">Variante unique</span>`;
       head.innerHTML = `
-        <strong style="color:rgba(212,184,122,0.95);font-size:12px;flex:1;">CADRE ${boxId} · ${escapeHtmlAttr(boxLabel)}</strong>
+        <strong style="color:rgba(212,184,122,0.95);font-size:12px;flex:1;">CADRE ${escapeHtmlAttr(boxId)} · ${escapeHtmlAttr(boxLabel)}</strong>
         ${dropdown}
         <button class="add-variant" title="Ajouter une variante" style="background:rgba(212,184,122,0.20);border:1px solid rgba(212,184,122,0.55);color:rgba(240,210,150,1);padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">+ Variante</button>
       `;
       group.appendChild(head);
-      // Item de la variante active
       group.appendChild(buildQuestItem(v.q, v.i, quests));
-      // Wire le dropdown
       const sel = head.querySelector('.variant-select');
       if (sel) sel.addEventListener('change', () => {
         activeIdx = parseInt(sel.value, 10);
@@ -2527,6 +2549,55 @@ function renderQuestsList() {
     };
     renderGroup();
     box.appendChild(group);
+  }
+}
+
+// Génère 1 quête pour chaque cadre listé (séquentiel). Appelle
+// /api/scenes/<sid>/generate-quest qui RENVOIE la quête payload mais ne
+// la persiste pas — on l'append nous-mêmes à meta.quests via saveSceneMeta.
+async function _generateQuestsForBoxes(boxIds) {
+  if (!boxIds.length) return;
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  const errors = [];
+  let done = 0;
+  showGptOverlay(`GPT-5.4 génère ${boxIds.length} quête(s)…`);
+  try {
+    for (const bid of boxIds) {
+      done++;
+      showGptOverlay(`Cadre ${bid} (${done}/${boxIds.length}) — génération…`);
+      try {
+        const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/generate-quest`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ box_id: bid }),
+        });
+        const j = await r.json();
+        if (!r.ok) { errors.push(`cadre ${bid} : ${j.error || 'HTTP ' + r.status}`); continue; }
+        const q = j.quest || {};
+        // Append à meta.quests avec un ID fresh.
+        const newQuest = {
+          id: `quest_gen_${Date.now()}_${done}`,
+          box_id: String(bid),
+          title: q.title || '',
+          intro_text: q.intro_text || '',
+          dialogue_choices: q.dialogue_choices || [],
+          _origin: 'gpt',
+          _rating: null, _note: null,
+        };
+        const list = [...(sceneState.meta?.quests || []), newQuest];
+        await saveSceneMeta({ quests: list });
+      } catch (e) {
+        errors.push(`cadre ${bid} : ${e.message}`);
+      }
+    }
+    await loadCurrentSceneMeta();
+    renderQuestsList();
+    if (errors.length) {
+      alert(`Terminé avec ${errors.length} erreur(s) :\n\n${errors.join('\n')}`);
+    } else {
+      showRagToast(`✓ ${boxIds.length} quête(s) générée(s)`);
+    }
+  } finally {
+    hideGptOverlay();
   }
 }
 
@@ -3345,7 +3416,77 @@ async function doRefinePrompt(level) {
 }
 
 $('gen-n1')?.addEventListener('click', () => doGenerate(1));
-$('gen-n2')?.addEventListener('click', () => doGenerate(2));
+
+// ─── Modale « Générer une ou plusieurs quêtes » (sélecteur de cadres) ──
+function openGenQuestsModal() {
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  const boxes = sceneState.meta?.boxes || [];
+  if (!boxes.length) { alert('Aucun cadre — trace au moins un cadre d\'abord.'); return; }
+  const quests = sceneState.meta?.quests || [];
+  const countsByBox = {};
+  for (const q of quests) {
+    const k = String(q.box_id || '');
+    if (!k || q._rating === 'refused') continue;
+    countsByBox[k] = (countsByBox[k] || 0) + 1;
+  }
+  const list = $('gq-boxes-list');
+  list.innerHTML = '';
+  // Tri par ID croissant pour cohérence avec la liste Missions.
+  const sorted = [...boxes].sort((a, b) => {
+    const an = Number(a.id), bn = Number(b.id);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  for (const b of sorted) {
+    const bid = String(b.id);
+    const n = countsByBox[bid] || 0;
+    const subj = (b.subject || '').trim() || '(sans sujet)';
+    const status = n === 0
+      ? '<span style="color:rgba(255,184,77,0.85);font-size:11px;">⚠ aucune quête</span>'
+      : `<span style="color:rgba(80,227,164,0.85);font-size:11px;">✓ ${n} variante${n > 1 ? 's' : ''}</span>`;
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;';
+    // Pré-cochage : cadres sans quête. L'utilisateur peut tout (re-)cocher.
+    row.innerHTML = `
+      <input type="checkbox" class="gq-box-cb" data-bid="${escapeHtmlAttr(bid)}" data-count="${n}" ${n === 0 ? 'checked' : ''}>
+      <span style="flex:1;font-size:13px;">
+        <strong style="color:rgba(212,184,122,0.95);">Cadre ${escapeHtmlAttr(bid)}</strong>
+        · <span style="color:rgba(255,255,255,0.85);">${escapeHtmlAttr(subj)}</span>
+      </span>
+      ${status}
+    `;
+    list.appendChild(row);
+  }
+  $('gen-quests-modal').classList.add('shown');
+}
+function closeGenQuestsModal() { $('gen-quests-modal').classList.remove('shown'); }
+function _gqCheckboxes() {
+  return Array.from(document.querySelectorAll('#gq-boxes-list .gq-box-cb'));
+}
+$('gq-all')?.addEventListener('click', () => {
+  _gqCheckboxes().forEach(cb => { cb.checked = true; });
+});
+$('gq-none')?.addEventListener('click', () => {
+  _gqCheckboxes().forEach(cb => { cb.checked = false; });
+});
+$('gq-missing')?.addEventListener('click', () => {
+  _gqCheckboxes().forEach(cb => { cb.checked = cb.dataset.count === '0'; });
+});
+$('gen-quests-cancel')?.addEventListener('click', closeGenQuestsModal);
+$('gen-quests-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('gen-quests-modal')) closeGenQuestsModal();
+});
+$('gq-launch')?.addEventListener('click', async () => {
+  const selected = _gqCheckboxes().filter(cb => cb.checked).map(cb => cb.dataset.bid);
+  if (!selected.length) { alert('Coche au moins un cadre.'); return; }
+  closeGenQuestsModal();
+  await _generateQuestsForBoxes(selected);
+});
+
+// Le bouton « 🪄 Générer une ou plusieurs quêtes… » du panneau Missions N2
+// ouvre maintenant le sélecteur de cadres au lieu de lancer une génération
+// aveugle. doGenerate(2) reste dispo pour usages programmatiques éventuels.
+$('gen-n2')?.addEventListener('click', openGenQuestsModal);
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 

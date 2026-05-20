@@ -1078,22 +1078,40 @@
     color: rgba(212,184,122,0.85);
     font-style: normal;
   }
-  /* Textarea inline qui se déplie sous le champ pour le commentaire */
-  .field-rate-textarea {
+  /* Bloc commentaire + Valider/Annuler, caché par défaut. S'ouvre au
+     clic d'un ★/✦/✗. Valider POST le rating au RAG individuellement. */
+  .field-rate-input {
     display: none;
+    margin-top: 6px;
+    padding: 10px;
+    background: rgba(0,0,0,0.30);
+    border: 1px solid rgba(212,184,122,0.30);
+    border-radius: 6px;
+  }
+  .field-rate-input.shown { display: block; }
+  .field-rate-input .field-rate-label {
+    font-size: 11px;
+    color: rgba(212,184,122,0.85);
+    margin-bottom: 6px;
+    letter-spacing: 0.02em;
+  }
+  .field-rate-input .field-rate-textarea {
+    display: block;  /* override l'ancien display:none global */
     width: 100%;
     background: rgba(0,0,0,0.4);
     color: #ddd;
-    border: 1px solid rgba(212,184,122,0.4);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 6px;
     padding: 8px 10px;
     font-family: inherit; font-size: 12px;
-    margin-top: 6px;
     min-height: 50px;
     resize: vertical;
     box-sizing: border-box;
   }
-  .field-rate-textarea.shown { display: block; }
+  .field-rate-input .field-rate-actions {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .field-rate-input .field-rate-actions .btn { flex: 1; min-height: 36px; margin-top: 0; }
 
   /* Dans quest-modal, le bouton .choice-mark devient READ-ONLY (info-only)
      puisque l'IA fixe quel est le meilleur. On le rend cliquable=false. */
@@ -2215,9 +2233,16 @@
       <div id="qu-choices" style="display:flex;flex-direction:column;gap:14px;"></div>
       <button class="btn" id="qu-add-choice" style="margin-top:8px;">+ Choix</button>
     </div>
-    <div class="modal-actions">
-      <button class="btn primary" id="qu-save" style="flex:1;">Sauver</button>
+    <!-- Plus de bouton Sauver : les notations sont envoyées au RAG champ
+         par champ au clic « Valider », et le contenu de la quête (titre,
+         intro, choix) est auto-sauvegardé à la fermeture de la modale (×). -->
+    <div style="margin-top:12px;padding:10px 12px;background:rgba(80,180,255,0.06);border-left:3px solid rgba(80,180,255,0.4);border-radius:4px;font-size:11px;color:rgba(255,255,255,0.65);line-height:1.5;">
+      💡 Tes notations sont envoyées au corpus RAG dès que tu cliques « Valider »
+      sur chaque champ. Le contenu de la quête (titre, intro, choix) est
+      auto-sauvegardé à la fermeture (×).
     </div>
+    <!-- Ghost pour préserver le listener legacy qu-save → saveQuest() -->
+    <button id="qu-save" type="button" style="display:none;" aria-hidden="true"></button>
   </div>
 </div>
 

@@ -1519,14 +1519,27 @@ function renderQuestionsList() {
   });
 }
 
+// Renvoie le rating "effectif" d'une question / quête : si l'item a été
+// posé par le bootstrap_corpus et n'a pas encore été noté explicitement
+// par l'utilisateur (flag _bootstrapped toujours true), on l'ignore au
+// niveau de l'affichage pour ne pas pré-sélectionner les boutons ★.
+// Dès que l'utilisateur clique sur ★/✦/✗ + Valider, submitRating efface
+// _bootstrapped et le vrai rating prend le relais.
+function _effectiveRating(q) {
+  if (!q || !q._rating) return null;
+  if (q._bootstrapped) return null;
+  return q._rating;
+}
+
 // Construit un item de liste pour une question N1, avec ses boutons de
 // notation, son expansion inline des choix, et ses formulaires inline pour
 // les notes (✦) et raisons de refus (✗).
 function buildQuestionItem(q, i, list) {
   const item = document.createElement('div');
-  item.className = 'ql-item ' + (q._rating ? `rated-${q._rating}` : '');
-  const isValidated = q._rating === 'good' || q._rating === 'nuanced';
-  const noteHtml = (q._rating === 'nuanced' && q._note)
+  const effective = _effectiveRating(q);
+  item.className = 'ql-item ' + (effective ? `rated-${effective}` : '');
+  const isValidated = effective === 'good' || effective === 'nuanced';
+  const noteHtml = (effective === 'nuanced' && q._note)
     ? `<div class="ql-note">${escapeHtmlAttr(q._note)}</div>` : '';
   const choicesRowsHtml = (q.choices || []).map((c, ci) => {
     const isCorrect = ci === q.correct_index;
@@ -1580,9 +1593,9 @@ function buildQuestionItem(q, i, list) {
     <div class="ql-row-controls">
       <span style="font-size:11px;color:rgba(255,255,255,0.55);margin-right:8px;">Noter la question :</span>
       <span class="rate-btns">
-        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="${escapeHtmlAttr(qLbls.good)}">★</button>
-        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="${escapeHtmlAttr(qLbls.nuanced)}">✦</button>
-        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="${escapeHtmlAttr(qLbls.refused)}">✗</button>
+        <button class="rate-btn good ${effective==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="${escapeHtmlAttr(qLbls.good)}">★</button>
+        <button class="rate-btn nuanced ${effective==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="${escapeHtmlAttr(qLbls.nuanced)}">✦</button>
+        <button class="rate-btn refused ${effective==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="${escapeHtmlAttr(qLbls.refused)}">✗</button>
       </span>
     </div>
     <div class="rate-input-row" data-for="question"></div>
@@ -1726,6 +1739,9 @@ async function submitRating(item, q, list, level, kind, rating, note, answerIdx,
   if (kind === 'question' || kind === 'quest') {
     q._rating = rating;
     q._note = note || null;
+    // L'utilisateur a maintenant explicitement noté : on lève le flag
+    // bootstrap pour que le rating soit affiché comme is-on (vert/orange/rouge).
+    q._bootstrapped = false;
   } else if (kind === 'answer') {
     if (level === 1) {
       q._choice_ratings = q._choice_ratings || [];
@@ -1943,16 +1959,40 @@ function openQuestModal(boxId, idx = -1) {
     badge.textContent = isBest ? '★ MEILLEURE ACCROCHE' : 'DISTRACTEUR';
     row.insertBefore(badge, row.firstChild);
 
-    // Attache rating sur le TEXTE et l'EXPLICATION du choix
+    // Attache rating sur le TEXTE et l'EXPLICATION du choix (avec leur
+    // index pour que la sauvegarde individuelle puisse construire le
+    // payload /rate-quest avec le bon choix ciblé).
     const inputEl = row.querySelector('.choice-text');
     const explainTa = row.querySelector('.choice-explain');
     const existing = c._field_ratings || {};
-    const rText = attachFieldRating(inputEl, 'choice_text', isBest, existing.text || {});
-    const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, existing.explanation || {});
+    const rText = attachFieldRating(inputEl, 'choice_text', isBest, existing.text || {}, i);
+    const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, existing.explanation || {}, i);
     // Re-mesure auto-grow après injection programmatique du contenu
     requestAnimationFrame(() => _autoGrowChoiceText(row));
     _qmFieldRaters.choices.push({ rText, rExpl, isBest });
   });
+
+  // Installe le contexte pour les saves individuels : à chaque clic
+  // Valider sur un champ, on lit cet état et on POST /rate-quest.
+  _persistContext = () => {
+    const sel = $('qu-box');
+    const boxId = sel?.value || '';
+    const boxObj = (sceneState.meta?.boxes || []).find(b => String(b.id) === String(boxId));
+    return {
+      item_id: q?.id || (editingQuestIndex >= 0
+        ? sceneState.meta.quests[editingQuestIndex]?.id : null),
+      box_id: boxId,
+      box_subject: boxObj?.subject || '',
+      box_description: boxObj?._description || '',
+      quest_title: $('qu-title')?.value || '',
+      intro_text: $('qu-intro')?.value || '',
+      choices: Array.from($('qu-choices').querySelectorAll('.choice-row')).map(row => ({
+        text: row.querySelector('.choice-text')?.value || '',
+        explanation: row.querySelector('.choice-explain')?.value || '',
+        is_best: row.classList.contains('is-best'),
+      })),
+    };
+  };
 
   // Bandeau "🪄 Générer cette quête" : visible UNIQUEMENT en mode création
   // (pas en édition d'une quête existante). On l'affiche dès qu'un cadre
@@ -2071,7 +2111,11 @@ function chip(label, value, color) {
 // élément (pour éviter de dupliquer quand on ré-ouvre le modal).
 function _cleanupOldFieldRatings(el) {
   let next = el.nextElementSibling;
-  while (next && (next.classList.contains('field-rate-row') || next.classList.contains('field-rate-textarea'))) {
+  while (next && (
+    next.classList.contains('field-rate-row') ||
+    next.classList.contains('field-rate-textarea') ||
+    next.classList.contains('field-rate-input')
+  )) {
     const toRemove = next;
     next = next.nextElementSibling;
     toRemove.remove();
@@ -2162,7 +2206,7 @@ const RATE_LABELS = {
 // `initial`   : { rating, note } pré-existant (cas édition)
 //
 // Le résultat est inséré DIRECTEMENT après l'élément cible.
-function attachFieldRating(targetEl, fieldType, isBest, initial = {}) {
+function attachFieldRating(targetEl, fieldType, isBest, initial = {}, choiceIdx = null) {
   const labelsKey = (fieldType === 'choice_text' || fieldType === 'choice_explain')
     ? (isBest ? 'best' : 'not_best') : 'any';
   const labels = RATE_LABELS[fieldType][labelsKey];
@@ -2179,14 +2223,28 @@ function attachFieldRating(targetEl, fieldType, isBest, initial = {}) {
     </span>
     <span class="rate-status"></span>
   `;
-  const textarea = document.createElement('textarea');
-  textarea.className = 'field-rate-textarea';
-  textarea.value = initNote;
-  // Insère row + textarea juste après targetEl
+  // Conteneur du textarea commentaire + boutons Valider/Annuler. Affiché
+  // UNIQUEMENT après un clic sur ★/✦/✗ (caché par défaut). Au Valider on
+  // POSTE individuellement le rating au RAG via /rate-quest (single-field).
+  const inputBox = document.createElement('div');
+  inputBox.className = 'field-rate-input';
+  inputBox.innerHTML = `
+    <div class="field-rate-label"></div>
+    <textarea class="field-rate-textarea" placeholder="Commentaire (optionnel)"></textarea>
+    <div class="field-rate-actions">
+      <button type="button" class="btn cancel">Annuler</button>
+      <button type="button" class="btn primary save">Valider</button>
+    </div>
+  `;
+  // Insère row + inputBox juste après targetEl
   targetEl.insertAdjacentElement('afterend', row);
-  row.insertAdjacentElement('afterend', textarea);
+  row.insertAdjacentElement('afterend', inputBox);
 
   const statusEl = row.querySelector('.rate-status');
+  const labelEl = inputBox.querySelector('.field-rate-label');
+  const textarea = inputBox.querySelector('.field-rate-textarea');
+  textarea.value = initNote;
+
   function updateStatus(rating) {
     if (!rating) {
       statusEl.textContent = '';
@@ -2196,59 +2254,137 @@ function attachFieldRating(targetEl, fieldType, isBest, initial = {}) {
       row.classList.add('has-rating');
     }
   }
-  function showTextarea(prefill) {
-    if (prefill && !textarea.value) {
-      textarea.value = '';
-      textarea.placeholder = prefill;
-    }
-    textarea.classList.add('shown');
+  function showInput(rating) {
+    labelEl.textContent = labels[rating];
+    inputBox.classList.add('shown');
     setTimeout(() => textarea.focus(), 60);
   }
-  function hideTextarea() {
-    textarea.classList.remove('shown');
+  function hideInput() {
+    inputBox.classList.remove('shown');
   }
 
   updateStatus(initRating);
-  // Le textarea s'ouvre dès qu'une note est posée (★, ✦ ou ✗). Commentaire
-  // optionnel — on garde même vide. Permet à l'utilisateur d'expliquer
-  // POURQUOI son rating quel qu'il soit.
-  if (initRating) showTextarea(labels[initRating]);
 
+  // `current` = état VALIDÉ persisté (init=initRating). `pending` = état
+  // visuel non encore validé (utilisateur a cliqué un ★/✦/✗ mais pas
+  // encore cliqué Valider). Annuler restaure `current` sur le visuel.
   let current = initRating;
+  let pending = null;
+
+  function setButtonsVisualState(state) {
+    row.querySelectorAll('.rate-btn').forEach(b => {
+      b.classList.toggle('is-on', b.dataset.action === state);
+    });
+  }
+
   row.querySelectorAll('.rate-btn').forEach(b => {
     b.addEventListener('click', (e) => {
       e.preventDefault();
       const action = b.dataset.action;
-      const same = b.classList.contains('is-on');
-      row.querySelectorAll('.rate-btn').forEach(x => x.classList.remove('is-on'));
+      const same = (action === current && pending === null);
       if (same) {
-        current = null;
-        updateStatus(null);
-        hideTextarea();
+        // Re-clic sur le rating déjà validé → propose de l'éditer / l'annuler
+        pending = action;
+        setButtonsVisualState(action);
+        showInput(action);
         return;
       }
-      b.classList.add('is-on');
-      current = action;
-      updateStatus(action);
-      // Toujours ouvrir le textarea (commentaire optionnel) — placeholder
-      // = la question contextuelle "Pourquoi est-ce X ?".
-      showTextarea(labels[action]);
+      pending = action;
+      setButtonsVisualState(action);
+      showInput(action);
     });
+  });
+
+  inputBox.querySelector('.cancel').addEventListener('click', () => {
+    pending = null;
+    // Restaure l'affichage à l'état persisté
+    setButtonsVisualState(current);
+    if (!current) textarea.value = initNote;  // best-effort
+    hideInput();
+  });
+
+  inputBox.querySelector('.save').addEventListener('click', async () => {
+    const rating = pending;
+    if (!rating) return;
+    const note = textarea.value.trim();
+    // Persist côté serveur immédiatement (single-field /rate-quest).
+    try {
+      await _persistSingleQuestFieldRating({
+        fieldType, isBest, rating, note, labels, choiceIdx,
+      });
+    } catch (e) {
+      alert('Notation échouée : ' + e.message);
+      return;
+    }
+    current = rating;
+    pending = null;
+    updateStatus(rating);
+    setButtonsVisualState(rating);
+    hideInput();
+    showRagToast('✓ Noté · envoyé au corpus');
   });
 
   return {
     get: () => ({
       rating: current,
       note: textarea.value.trim() || null,
-      labels,  // utile pour le payload
+      labels,
     }),
   };
 }
 
-function closeQuestModal() {
+// Contexte fourni par le quest-modal au moment de l'ouverture : permet
+// au save d'un single-field rating de construire un payload /rate-quest
+// COMPLET (sinon le serveur n'a pas le contexte cadre/quête).
+let _persistContext = null;
+
+async function _persistSingleQuestFieldRating({ fieldType, isBest, rating, note, labels, choiceIdx }) {
+  if (!_persistContext) throw new Error('contexte quête manquant');
+  const ctx = _persistContext();
+  if (!sceneState.id || !ctx.item_id) throw new Error('quête non sauvegardée');
+  const payload = {
+    item_id: ctx.item_id,
+    box_id: String(ctx.box_id || ''),
+    box_subject: ctx.box_subject || '',
+    box_description: ctx.box_description || '',
+    quest_title: ctx.quest_title || '',
+    intro_text: ctx.intro_text || '',
+    title_rating: null, intro_rating: null,
+    choices: (ctx.choices || []).map((c, idx) => ({
+      idx, text: c.text || '', is_best: !!c.is_best,
+      explanation: c.explanation || '',
+      text_rating: null, explain_rating: null,
+    })),
+  };
+  const ratingObj = { rating, note: note || null, label: labels[rating] || '' };
+  if (fieldType === 'title')         payload.title_rating = ratingObj;
+  else if (fieldType === 'intro')    payload.intro_rating = ratingObj;
+  else if (fieldType === 'choice_text' || fieldType === 'choice_explain') {
+    const ci = choiceIdx;
+    if (ci === null || ci === undefined || ci < 0 || ci >= payload.choices.length) {
+      throw new Error('index de choix introuvable');
+    }
+    if (fieldType === 'choice_text')    payload.choices[ci].text_rating    = ratingObj;
+    if (fieldType === 'choice_explain') payload.choices[ci].explain_rating = ratingObj;
+  }
+  const r = await fetch(`/api/scenes/${encodeURIComponent(sceneState.id)}/rate-quest`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.error || `HTTP ${r.status}`);
+  }
+}
+
+async function closeQuestModal() {
+  // Auto-save le CONTENU de la quête à la fermeture (les ratings sont déjà
+  // partis individuellement à chaque Valider).
+  try { await _saveQuestContentSilently(); } catch (e) { console.warn('autosave quest', e); }
   $('quest-modal').classList.remove('shown');
   editingQuestIndex = -1;
   editingQuestBoxId = null;
+  _persistContext = null;
   // Si on annule et qu'on venait de Missions, on y retourne (onglet N2).
   if (_returnToMissionsAfterSave) {
     _returnToMissionsAfterSave = false;
@@ -2256,17 +2392,50 @@ function closeQuestModal() {
   }
 }
 
+// Sauve le contenu de la quête (titre, intro, choix, explication) dans
+// meta.quests SANS toucher aux ratings (qui partent individuellement via
+// /rate-quest single-field au clic Valider). Silencieux : pas d'alert si
+// la quête est encore vide ou que rien n'a changé.
+async function _saveQuestContentSilently() {
+  if (!sceneState.id) return;
+  const sel = $('qu-box');
+  const boxIdSel = sel?.value;
+  if (!boxIdSel) return;  // pas de cadre choisi, rien à sauver
+  const title = $('qu-title')?.value.trim() || '';
+  const intro = $('qu-intro')?.value.trim() || '';
+  const { choices: dialogue_choices } = readChoices($('qu-choices'), true);
+  if (!title && !intro && !dialogue_choices.length) return;
+  const id = editingQuestIndex >= 0
+    ? sceneState.meta.quests[editingQuestIndex]?.id
+    : 'quest-' + Date.now();
+  const quest = {
+    id, box_id: String(boxIdSel),
+    title, intro_text: intro,
+    dialogue_choices,
+  };
+  if (editingQuestIndex >= 0) {
+    const prev = sceneState.meta.quests[editingQuestIndex];
+    if (prev?._origin) quest._origin = prev._origin;
+    if (prev?._field_ratings) quest._field_ratings = prev._field_ratings;
+  }
+  const list = [...(sceneState.meta?.quests || [])];
+  if (editingQuestIndex >= 0) list[editingQuestIndex] = quest;
+  else list.push(quest);
+  await saveSceneMeta({ quests: list });
+}
+
 $('qu-add-choice').addEventListener('click', () => {
   const row = addChoiceRow($('qu-choices'), '', false, true);
-  // Ajout manuel = pas un meilleur choix (on lock le toggle dans le quest-modal)
   const badge = document.createElement('div');
   badge.className = 'choice-kind-badge';
   badge.textContent = 'DISTRACTEUR';
   row.insertBefore(badge, row.firstChild);
   const inputEl = row.querySelector('.choice-text');
   const explainTa = row.querySelector('.choice-explain');
-  const rText = attachFieldRating(inputEl, 'choice_text', false, {});
-  const rExpl = attachFieldRating(explainTa, 'choice_explain', false, {});
+  // index = position dans la liste actuelle (= longueur avant l'ajout = nb d'enfants - 1)
+  const idx = $('qu-choices').querySelectorAll('.choice-row').length - 1;
+  const rText = attachFieldRating(inputEl, 'choice_text', false, {}, idx);
+  const rExpl = attachFieldRating(explainTa, 'choice_explain', false, {}, idx);
   _qmFieldRaters?.choices?.push({ rText, rExpl, isBest: false });
 });
 $('qu-cancel').addEventListener('click', closeQuestModal);
@@ -2313,8 +2482,8 @@ $('qu-gen-btn').addEventListener('click', async () => {
       row.insertBefore(badge, row.firstChild);
       const inputEl = row.querySelector('.choice-text');
       const explainTa = row.querySelector('.choice-explain');
-      const rText = attachFieldRating(inputEl, 'choice_text', isBest, {});
-      const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, {});
+      const rText = attachFieldRating(inputEl, 'choice_text', isBest, {}, i);
+      const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, {}, i);
       _qmFieldRaters.choices.push({ rText, rExpl, isBest });
       requestAnimationFrame(() => _autoGrowChoiceText(row));
     });

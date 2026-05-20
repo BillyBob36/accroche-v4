@@ -357,11 +357,31 @@
 
   .box-panel-header {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 8px;
+    margin: -14px -16px 8px -16px;
+    padding: 10px 16px;
+    cursor: grab;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px 10px 0 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0));
+    user-select: none;
+    touch-action: none;
   }
+  .box-panel-header:active { cursor: grabbing; }
+  .box-panel-header::before {
+    content: '⋮⋮';
+    color: rgba(255,255,255,0.30);
+    letter-spacing: -3px;
+    font-size: 14px;
+    margin-right: 6px;
+    pointer-events: none;
+  }
+  /* Sur mobile (bottom-sheet) le drag ne sert à rien — désactive le curseur grab. */
+  body.mode-mobile .box-panel-header { cursor: default; touch-action: auto; }
+  body.mode-mobile .box-panel-header::before { display: none; }
   .box-panel-title {
     font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.08em; color: rgba(255, 184, 77, 0.85); font-weight: 500;
+    flex: 1;
   }
   .box-panel-close {
     background: transparent; border: 0; color: rgba(255,255,255,0.5);

@@ -680,6 +680,106 @@ $('close-box-panel').addEventListener('click', () => {
   deselectBox();
 });
 
+// ─── Drag & drop du box-panel par son header ─────────────────────
+// Sur desktop, l'utilisateur peut empoigner le bandeau « CADRE SÉLECTIONNÉ »
+// pour déplacer le panneau là où il veut (utile quand il masque un cadre
+// qu'on veut sélectionner derrière). Position persistée en localStorage.
+// Désactivé en mode mobile (le panneau est un bottom-sheet plein largeur).
+(function setupBoxPanelDrag() {
+  const panel = document.getElementById('box-panel');
+  const header = panel?.querySelector('.box-panel-header');
+  if (!panel || !header) return;
+  const STORAGE_KEY = 'box-panel-pos';
+  const MARGIN = 8;
+
+  // Restaure la position sauvegardée si valide (et écran assez large)
+  function restorePos() {
+    if (document.body.classList.contains('mode-mobile')) return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const { left, top } = JSON.parse(raw);
+      const maxL = window.innerWidth - panel.offsetWidth - MARGIN;
+      const maxT = window.innerHeight - 60;
+      const clL = Math.max(MARGIN, Math.min(left, maxL));
+      const clT = Math.max(MARGIN, Math.min(top, maxT));
+      panel.style.left = clL + 'px';
+      panel.style.top = clT + 'px';
+      panel.style.right = 'auto';
+    } catch { /* corrupted entry, ignore */ }
+  }
+  // Restaure dès qu'on est en mode shown
+  const observer = new MutationObserver(() => {
+    if (panel.classList.contains('shown')) restorePos();
+  });
+  observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+
+  let dragging = false;
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+  function onDown(e) {
+    if (document.body.classList.contains('mode-mobile')) return;
+    // Évite de capturer un clic sur le bouton ×
+    if (e.target.closest('.box-panel-close')) return;
+    e.preventDefault();
+    const r = panel.getBoundingClientRect();
+    startLeft = r.left; startTop = r.top;
+    const p = (e.touches && e.touches[0]) || e;
+    startX = p.clientX; startY = p.clientY;
+    dragging = true;
+    // Switch en positionnement absolu si on était encore en `right: 14px`
+    panel.style.left = startLeft + 'px';
+    panel.style.top = startTop + 'px';
+    panel.style.right = 'auto';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onUp);
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    if (e.cancelable) e.preventDefault();
+    const p = (e.touches && e.touches[0]) || e;
+    let nl = startLeft + (p.clientX - startX);
+    let nt = startTop + (p.clientY - startY);
+    const maxL = window.innerWidth - panel.offsetWidth - MARGIN;
+    const maxT = window.innerHeight - 60;
+    nl = Math.max(MARGIN, Math.min(nl, maxL));
+    nt = Math.max(MARGIN, Math.min(nt, maxT));
+    panel.style.left = nl + 'px';
+    panel.style.top = nt + 'px';
+  }
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+    // Persiste la position finale
+    try {
+      const r = panel.getBoundingClientRect();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ left: r.left, top: r.top }));
+    } catch { /* localStorage plein ou désactivé : on ignore */ }
+  }
+  header.addEventListener('mousedown', onDown);
+  header.addEventListener('touchstart', onDown, { passive: false });
+
+  // Double-clic sur le header → reset position par défaut (haut droit)
+  header.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.box-panel-close')) return;
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.right = '';
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  });
+
+  // Re-clamp si la fenêtre est redimensionnée
+  window.addEventListener('resize', () => {
+    if (panel.classList.contains('shown')
+        && !document.body.classList.contains('mode-mobile')) restorePos();
+  });
+})();
+
 function deselectBox() {
   state.selectedBoxId = null;
   $('editor-layer').querySelectorAll('.editor-box-fill').forEach(r => r.classList.remove('selected'));

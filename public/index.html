@@ -352,8 +352,31 @@
     display: none;
     z-index: 12;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    /* Scrollbar custom Firefox : finesse + couleur or velours sur fond noir */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(212, 184, 122, 0.40) rgba(0, 0, 0, 0.20);
   }
   body.state-editor #box-panel.shown { display: block; }
+
+  /* Scrollbar custom WebKit (Chrome / Edge / Safari) du box-panel — discrète,
+     assortie à la palette « Velours Théâtre » (or sur fond sombre). Au survol,
+     le pouce s'éclaire pour signaler l'interactivité. */
+  #box-panel::-webkit-scrollbar { width: 8px; }
+  #box-panel::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.20);
+    border-radius: 0 10px 10px 0;
+  }
+  #box-panel::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(212, 184, 122, 0.45), rgba(140, 110, 60, 0.40));
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+  }
+  #box-panel::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(232, 210, 160, 0.70), rgba(180, 150, 90, 0.60));
+  }
+  #box-panel::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(180deg, rgba(255, 230, 180, 0.85), rgba(200, 170, 110, 0.75));
+  }
 
   .box-panel-header {
     display: flex; align-items: center; justify-content: space-between;

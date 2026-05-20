@@ -1428,6 +1428,26 @@
     font-size: 10px; color: rgba(255,255,255,0.5);
     letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
   }
+  /* Panneau Cadres compact : titre + hint à gauche, bouton compact à droite. */
+  .frames-pane-row {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .frames-pane-row .frames-pane-text { flex: 1; min-width: 0; }
+  .frames-pane-row .frames-pane-text h4 {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(255,255,255,0.55); font-weight: 500;
+  }
+  .frames-pane-row .frames-pane-text .tool-pane-hint {
+    font-size: 11px; color: rgba(255,255,255,0.55); line-height: 1.45;
+  }
+  .frames-pane-row > .btn {
+    min-height: 44px; padding: 0 16px;
+    max-width: 320px;
+  }
+  body.mode-mobile .frames-pane-row {
+    flex-direction: column; align-items: stretch; gap: 10px;
+  }
+  body.mode-mobile .frames-pane-row > .btn { max-width: none; }
 
   /* ─── Tracé : 2 groupes compacts (Niveau 1 blanc / Niveau 2 or) ─── */
   .trace-groups {
@@ -1763,21 +1783,30 @@
       <input type="file" id="upload-input" accept="image/*">
     </div>
 
-    <!-- Sous-panneau : Cadres (intègre l'ex éditor-toolbar) -->
+    <!-- Sous-panneau : Cadres — layout compact en une seule ligne :
+         titre + hint à gauche, bouton « Régénérer pour tous les cadres »
+         à droite (compact). Les autres actions ont migré ailleurs :
+           · + Question d'observation / Questions niv.1 → onglet Missions
+           · Quitter → cliquer un autre onglet sort automatiquement
+           · Sauver et générer → sauvegarde auto au regen + bouton « Mettre
+             à jour le module » dans l'onglet Module
+         Les 4 boutons obsolètes sont conservés en éléments fantômes
+         (display:none) UNIQUEMENT pour préserver leurs listeners app.js. -->
     <div class="tool-pane" data-pane="frames">
-      <h4>Tracer des cadres</h4>
-      <p class="tool-pane-hint">Drag sur l'image pour tracer un cadre, poignées 🟦 pour redimensionner.</p>
-      <div class="tool-pane-actions">
-        <button class="btn" id="add-observation-question" type="button">+ Question d'observation</button>
-        <button class="btn" id="manage-questions" type="button">Questions niv. 1</button>
+      <div class="frames-pane-row">
+        <div class="frames-pane-text">
+          <h4 style="margin:0 0 4px 0;">Tracer des cadres</h4>
+          <p class="tool-pane-hint" style="margin:0;">Drag sur l'image pour tracer un cadre, poignées 🟦 pour redimensionner.</p>
+        </div>
+        <button class="btn" id="regen-all-boxes" type="button"
+                title="Ouvre une modale pour choisir LE OU LES CADRES et LE OU LES ACTIONS à régénérer en lot (Image zoom 1/2, Dessin, Analyse vision)."
+                style="flex-shrink:0;align-self:stretch;background:rgba(80,180,255,0.12);border-color:rgba(80,180,255,0.4);color:rgba(140,200,255,0.95);">↻ Régénérer pour tous les cadres</button>
       </div>
-      <div class="tool-pane-actions" style="margin-top:8px;">
-        <button class="btn" id="regen-all-boxes" type="button" title="Ouvre une modale pour choisir LE OU LES CADRES et LE OU LES ACTIONS à régénérer en lot (Image zoom 1/2, Dessin, Analyse vision).">↻ Régénérer pour tous les cadres</button>
-      </div>
-      <div class="tool-pane-actions" style="margin-top:8px;">
-        <button class="btn" id="exit-editor" type="button">Quitter</button>
-        <button class="btn primary" id="generate-from-editor" type="button">Sauver et générer</button>
-      </div>
+      <!-- Boutons fantômes (préservent les listeners JS legacy) -->
+      <button id="add-observation-question" type="button" style="display:none;" aria-hidden="true"></button>
+      <button id="manage-questions" type="button" style="display:none;" aria-hidden="true"></button>
+      <button id="exit-editor" type="button" style="display:none;" aria-hidden="true"></button>
+      <button id="generate-from-editor" type="button" style="display:none;" aria-hidden="true"></button>
     </div>
 
     <!-- Sous-panneau : Personnages (intègre l'ex character-toolbar) -->

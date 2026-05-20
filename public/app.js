@@ -3705,6 +3705,54 @@ $('gen-n2')?.addEventListener('click', openGenQuestsModal);
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
+// Bouton « 💬 Compléter les explications manquantes » : pour chaque choix
+// de chaque quête de la scène COURANTE dont `explanation` est vide, on
+// demande à GPT+RAG d'en générer une. Idempotent — ne touche pas aux
+// explications déjà remplies.
+$('backfill-explanations')?.addEventListener('click', async () => {
+  if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
+  // Compte rapide pour donner une visibilité avant lancement
+  const quests = sceneState.meta?.quests || [];
+  let missing = 0, total = 0;
+  for (const q of quests) {
+    for (const c of (q.dialogue_choices || [])) {
+      total++;
+      if (!(c.explanation || '').trim()) missing++;
+    }
+  }
+  if (!missing) {
+    alert('✓ Toutes les explications sont déjà remplies (' + total + ' choix au total).');
+    return;
+  }
+  if (!confirm(
+    `${missing} explication(s) manquante(s) sur ${total} choix.\n\n` +
+    `GPT-5.4 va générer chaque explication manquante en s'appuyant sur :\n` +
+    `· le contexte vision du cadre (qui / situation / tags)\n` +
+    `· le top-K du corpus RAG (exemples notés sur situations similaires)\n\n` +
+    `Coût indicatif : ~${missing} appels chat. Continuer ?`
+  )) return;
+  showGptOverlay(`GPT-5.4 complète ${missing} explication(s)…`);
+  try {
+    const r = await fetch('/api/backfill-explanations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ scene_ids: [sceneState.id] }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    const rep = j.reports?.[sceneState.id] || {};
+    const msg = rep.error
+      ? `Erreur : ${rep.error}`
+      : `✓ ${rep.filled} explication(s) générée(s), ${rep.skipped} déjà OK${rep.errors ? `, ${rep.errors} erreur(s)` : ''}.`;
+    alert(msg);
+    await loadCurrentSceneMeta();
+    renderQuestsList();
+  } catch (e) {
+    alert('Backfill échoué : ' + e.message);
+  } finally {
+    hideGptOverlay();
+  }
+});
+
 // ─── Modale « Régénérer pour tous les cadres » ──────────────────────
 // Permet de relancer en lot N'IMPORTE QUELLE combinaison d'actions
 // (image zoom 1, image zoom 2, dessin, analyse vision) sur le ou les

@@ -685,6 +685,129 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
     }
 
 
+# ----------------- Backfill des explications manquantes ----------------
+
+def _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block):
+    is_best = bool(choice.get("is_best"))
+    role = "MEILLEURE ACCROCHE (best)" if is_best else "DISTRACTEUR (alternatif)"
+    return (
+        f"CADRE / CONTEXTE :\n{ctx_label}\n\n"
+        f"QUÊTE — titre : {quest.get('title','')}\n"
+        f"Intro : {quest.get('intro_text','')}\n\n"
+        f"Choix #{choice_idx + 1} — {role} :\n"
+        f"« {choice.get('text','')} »\n\n"
+        f"MÉMOIRE RAG (explications passées validées sur situations similaires) :\n"
+        f"{rag_block}\n\n"
+        f"Tâche : produis l'EXPLICATION pédagogique de ce choix pour le joueur. "
+        f"Une seule phrase (< 60 mots), ton coach, qui dit POURQUOI ce choix "
+        f"{'est la meilleure accroche' if is_best else 'paraît plausible mais rate'} "
+        f"et finit par le PRINCIPE pédagogique. Réponds en JSON : "
+        '{"explanation": "..."}'
+    )
+
+
+def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
+    """Génère UNE explication pour un seul choix d'une quête N2 en
+    s'appuyant sur le contexte du cadre + le RAG. Renvoie la chaîne
+    générée (jamais vide ; lève RuntimeError si GPT n'a pas répondu)."""
+    base = SCENES / scene_id
+    meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
+    box_id = str(quest.get("box_id", ""))
+    target_box = next(
+        (b for b in meta.get("boxes", []) if str(b.get("id")) == box_id), None
+    )
+    if not target_box:
+        raise RuntimeError(f"Cadre {box_id} introuvable")
+    choices = quest.get("dialogue_choices", []) or []
+    if not (0 <= choice_idx < len(choices)):
+        raise RuntimeError(f"choice_idx hors borne ({choice_idx})")
+    choice = choices[choice_idx]
+
+    # Construit la query RAG : situation du cadre + texte du choix.
+    analysis = target_box.get("_analysis", {}) or {}
+    personnages = analysis.get("personnages") or []
+    qui_agg = " | ".join(p.get("qui", "") for p in personnages if p.get("qui"))
+    situation_agg = " | ".join(p.get("situation", "") for p in personnages if p.get("situation"))
+    tags_join = " ".join(str(t) for t in (analysis.get("tags") or []))
+    rag_query = (
+        f"{qui_agg} | {situation_agg} | {tags_join} | "
+        f"choix={choice.get('text','')} | is_best={bool(choice.get('is_best'))}"
+    )
+    rag_block = _rag_block_for(rag_query, level=2, k=6) or "(aucun exemple)"
+
+    ctx_label = (
+        f"qui : {qui_agg or '(non renseigné)'}\n"
+        f"situation : {situation_agg or '(non renseignée)'}\n"
+        f"tags : {tags_join or '(aucun)'}"
+    )
+
+    sys_msg = (
+        "Tu es expert en formation vente luxe (Robin Lent). Tu produis l'EXPLICATION "
+        "pédagogique d'un choix de dialogue. Ton coach, didactique, jamais commercial. "
+        "Une seule phrase compacte (< 60 mots). PAS d'introduction (« Cette réponse… ») — "
+        "va droit au principe. Inspire-toi du ton/structure des exemples ★ "
+        "du RAG, évite les patterns des ✗/✦."
+    )
+    user_msg = _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block)
+    j = chat_json(
+        messages=[
+            {"role": "system", "content": sys_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        max_completion_tokens=500,
+        temperature=0.4,
+        timeout=90,
+    )
+    expl = (j.get("explanation") or "").strip()
+    if not expl:
+        raise RuntimeError("GPT n'a pas renvoyé d'explication")
+    return expl
+
+
+def backfill_quest_explanations(scene_id: str) -> dict:
+    """Pour chaque choix de chaque quête de la scène dont `explanation`
+    est vide, génère une explication via GPT+RAG et la sauve dans
+    meta.quests. Idempotent : skip les choix déjà remplis.
+
+    Renvoie un rapport { quest_id: { choice_idx: 'ok' | 'skip' | 'error' } }.
+    """
+    base = SCENES / scene_id
+    meta_path = base / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    report: dict = {}
+    n_filled = 0
+    n_skipped = 0
+    n_errors = 0
+    for quest in meta.get("quests", []) or []:
+        qid = quest.get("id", "?")
+        rep = {}
+        choices = quest.get("dialogue_choices") or []
+        for i, c in enumerate(choices):
+            if (c.get("explanation") or "").strip():
+                rep[str(i)] = "skip"
+                n_skipped += 1
+                continue
+            try:
+                expl = generate_explanation_for_choice(scene_id, quest, i)
+                c["explanation"] = expl
+                rep[str(i)] = "ok"
+                n_filled += 1
+            except Exception as e:
+                rep[str(i)] = f"error: {e}"
+                n_errors += 1
+        if rep:
+            report[qid] = rep
+    if n_filled:
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "scene_id": scene_id,
+        "filled": n_filled,
+        "skipped": n_skipped,
+        "errors": n_errors,
+        "details": report,
+    }
+
+
 # ----------------- Régénération d'un distracteur unique -----------------
 
 def regen_distractor(level: int, question_or_quest: dict,

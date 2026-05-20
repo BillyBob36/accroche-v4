@@ -1241,6 +1241,28 @@ class Handler(SimpleHTTPRequestHandler):
             })
             return
 
+        # Backfill des explications manquantes : pour chaque choix de
+        # chaque quête de la scène dont `explanation` est vide, génère
+        # une explication via GPT + RAG. Idempotent.
+        if path == "/api/backfill-explanations":
+            payload = self._read_json() or {}
+            scene_ids = payload.get("scene_ids")
+            if not isinstance(scene_ids, list) or not scene_ids:
+                self._send_json(400, {"error": "scene_ids (liste) requis"}); return
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from generate import backfill_quest_explanations  # noqa
+                reports = {}
+                for sid in scene_ids:
+                    try:
+                        reports[sid] = backfill_quest_explanations(sid)
+                    except Exception as e:
+                        reports[sid] = {"error": str(e)}
+            except Exception as e:
+                self._send_json(500, {"error": f"backfill failed: {e}"}); return
+            self._send_json(200, {"reports": reports})
+            return
+
         # Seed initial du corpus RAG avec des entrées synthétiques inspirées
         # de l'expertise marketing luxe (Robin Lent + théorie générale +
         # exemples concrets de l'auteur). À lancer UNE FOIS pour amorcer

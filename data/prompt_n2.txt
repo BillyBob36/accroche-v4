@@ -53,7 +53,14 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
   « paraît », « a l'air ».
 - 4 `dialogue_choices` exactement : 1 best + 3 distracteurs.
 - Chaque `text` < 30 mots, ton oral naturel, prononcé par le vendeur.
-- Chaque `explanation` < 60 mots, finit par le PRINCIPE pédagogique.
+- Chaque `explanation` est OBLIGATOIRE — ne JAMAIS la laisser vide.
+  Une phrase courte (< 60 mots), ton coach, qui :
+    1. pour le BEST : explique POURQUOI cette accroche est la meilleure
+       (mécanique psychologique + ancrage sur la situation observée),
+    2. pour un DISTRACTEUR : explique POURQUOI ce choix paraît plausible
+       MAIS pourquoi il rate (ferme la conversation, intrusif, etc.),
+    3. finit par le PRINCIPE pédagogique révélé en 1 phrase compacte
+       (ex: « le compliment authentique ouvre sans pression »).
 - Distracteurs PLAUSIBLES, chacun avec un DÉFAUT DIFFÉRENT :
    trop générique / trop intrusif / trop commercial / trop effacé /
    trop flatteur / trop direct sur le prix.

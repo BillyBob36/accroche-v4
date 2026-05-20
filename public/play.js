@@ -266,15 +266,30 @@ document.addEventListener('click', (e) => {
 function applyTraceStyle(ts) {
   if (!ts || typeof ts !== 'object') return;
   const root = document.documentElement;
-  if (typeof ts.stroke === 'number') {
-    root.style.setProperty('--stroke-w', String(ts.stroke));
+  // Accepte le NOUVEAU format ({n1:{...}, n2:{...}}) ET l'ANCIEN
+  // (stroke/opacity/glow mono-niveau, qu'on promeut aux 2 niveaux).
+  const n1 = ts.n1 || ts;
+  const n2 = ts.n2 || ts;
+  // Vars dédiées par niveau (utilisées par .observation-skel / .quest-skel)
+  if (typeof n1.stroke === 'number')  root.style.setProperty('--stroke-w-n1', String(n1.stroke));
+  if (typeof n1.opacity === 'number') root.style.setProperty('--stroke-opacity-n1', String(n1.opacity));
+  if (typeof n1.glow === 'number') {
+    root.style.setProperty('--glow-r-n1', `${(n1.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a-n1', (n1.glow * 0.95).toFixed(3));
   }
-  if (typeof ts.opacity === 'number') {
-    root.style.setProperty('--stroke-opacity', String(ts.opacity));
+  if (typeof n2.stroke === 'number')  root.style.setProperty('--stroke-w-n2', String(n2.stroke));
+  if (typeof n2.opacity === 'number') root.style.setProperty('--stroke-opacity-n2', String(n2.opacity));
+  if (typeof n2.glow === 'number') {
+    root.style.setProperty('--glow-r-n2', `${(n2.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a-n2', (n2.glow * 0.95).toFixed(3));
   }
-  if (typeof ts.glow === 'number') {
-    root.style.setProperty('--glow-r', `${(ts.glow * 18).toFixed(1)}px`);
-    root.style.setProperty('--glow-a', (ts.glow * 0.95).toFixed(3));
+  // Fallback : pose aussi les vars mono pour le CSS legacy qui les utilise.
+  // n1 prime (observation-skel) car c'est l'expérience la plus vue.
+  if (typeof n1.stroke === 'number')  root.style.setProperty('--stroke-w', String(n1.stroke));
+  if (typeof n1.opacity === 'number') root.style.setProperty('--stroke-opacity', String(n1.opacity));
+  if (typeof n1.glow === 'number') {
+    root.style.setProperty('--glow-r', `${(n1.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a', (n1.glow * 0.95).toFixed(3));
   }
 }
 

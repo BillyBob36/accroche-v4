@@ -184,17 +184,17 @@
   body.blurred .stage { filter: blur(14px) brightness(0.35); }
   body.blurred .stage .quest-layer { pointer-events: none; }
 
-  /* shimmering golden contour for quests */
+  /* shimmering golden contour for quests — vars Niveau 2 */
   .quest-skel { transition: opacity 320ms ease; }
   .quest-skel path {
     fill: none;
     stroke: var(--accent);
-    stroke-width: var(--stroke-w);
-    stroke-opacity: var(--stroke-opacity);
+    stroke-width: var(--stroke-w-n2, var(--stroke-w));
+    stroke-opacity: var(--stroke-opacity-n2, var(--stroke-opacity));
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
-    filter: drop-shadow(0 0 8px rgba(212,184,122,0.7));
+    filter: drop-shadow(0 0 var(--glow-r-n2, 8px) rgba(212,184,122, calc(0.7 + var(--glow-a-n2, 0))));
     animation: shimmer 2.4s ease-in-out infinite;
   }
   @keyframes shimmer {
@@ -213,8 +213,8 @@
   .observation-skel path {
     fill: none;
     stroke: white;
-    stroke-width: var(--stroke-w);
-    stroke-opacity: var(--stroke-opacity);
+    stroke-width: var(--stroke-w-n1, var(--stroke-w));
+    stroke-opacity: var(--stroke-opacity-n1, var(--stroke-opacity));
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
@@ -223,9 +223,9 @@
   }
   .observation-skel.active path {
     opacity: 1;
-    /* Le glow utilise les variables CSS pilotées par meta.trace_style.
-       Si --glow-a vaut 0 (par défaut), pas de drop-shadow visible. */
-    filter: drop-shadow(0 0 var(--glow-r) rgba(255,255,255,var(--glow-a)));
+    /* Le glow utilise les variables CSS pilotées par meta.trace_style (n1).
+       Si --glow-a-n1 vaut 0 (par défaut), pas de drop-shadow visible. */
+    filter: drop-shadow(0 0 var(--glow-r-n1, var(--glow-r)) rgba(255,255,255,var(--glow-a-n1, var(--glow-a))));
   }
   .observation-hit {
     fill: rgba(0,0,0,0);

@@ -1052,13 +1052,29 @@ document.addEventListener('click', e => {
   }
 });
 
-// ---- Sliders du module Tracé ----
-// Les valeurs s'appliquent en CSS variables (visible immédiatement dans
-// l'éditeur), persistent dans localStorage (entre sessions, sur cette
-// machine), ET — quand un module est chargé — dans `sceneState.meta.trace_style`,
-// qui est sauvé via /api/scenes/<id>/meta avec un debounce. Le PLAYER lira
-// `meta.trace_style` au chargement et appliquera les mêmes vars CSS, donc le
-// joueur voit exactement les mêmes contours que l'éditeur.
+// ---- Sliders du module Tracé (2 niveaux : N1 blanc / N2 or) ----
+// Les valeurs s'appliquent en CSS variables (preview live), persistent dans
+// localStorage (entre sessions), ET — quand un module est chargé — dans
+// `sceneState.meta.trace_style = { n1: {...}, n2: {...} }` poussé via
+// /api/scenes/<id>/meta (debounce). Le PLAYER lit `meta.trace_style` et
+// applique les vars CSS aux .observation-skel (n1) / .quest-skel (n2).
+// Compat : si meta.trace_style = { stroke, opacity, glow } (ancien format
+// mono-niveau), on le promeut en { n1: <ancien>, n2: <ancien> } à la lecture.
+
+const TRACE_DEFAULTS = { stroke: 3, opacity: 0.92, glow: 0 };
+
+function _lsKey(level, prop) { return `accroche-${prop}-${level}`; }
+
+// Lit la valeur courante depuis localStorage avec fallback sur l'ancien key
+// (mono-niveau) — pour migrer en douceur les utilisateurs qui avaient déjà
+// configuré un style avant la mise à jour.
+function _readLevelProp(level, prop, fallback) {
+  const v = localStorage.getItem(_lsKey(level, prop));
+  if (v !== null) return parseFloat(v);
+  const legacy = localStorage.getItem(`accroche-${prop}`);
+  if (legacy !== null) return parseFloat(legacy);
+  return fallback;
+}
 
 let _traceStylePushTimer = null;
 function pushTraceStyleToScene() {
@@ -1066,92 +1082,95 @@ function pushTraceStyleToScene() {
   clearTimeout(_traceStylePushTimer);
   _traceStylePushTimer = setTimeout(async () => {
     const trace_style = {
-      stroke: parseFloat(localStorage.getItem('accroche-stroke') || '3'),
-      opacity: parseFloat(localStorage.getItem('accroche-opacity') || '0.92'),
-      glow: parseFloat(localStorage.getItem('accroche-glow') || '0'),
+      n1: {
+        stroke:  _readLevelProp('n1', 'stroke',  TRACE_DEFAULTS.stroke),
+        opacity: _readLevelProp('n1', 'opacity', TRACE_DEFAULTS.opacity),
+        glow:    _readLevelProp('n1', 'glow',    TRACE_DEFAULTS.glow),
+      },
+      n2: {
+        stroke:  _readLevelProp('n2', 'stroke',  TRACE_DEFAULTS.stroke),
+        opacity: _readLevelProp('n2', 'opacity', TRACE_DEFAULTS.opacity),
+        glow:    _readLevelProp('n2', 'glow',    TRACE_DEFAULTS.glow),
+      },
     };
     try { await saveSceneMeta({ trace_style }); } catch {}
-  }, 500);  // debounce, évite un POST à chaque pixel du slider
+  }, 500);
 }
 
-// Glow slider — soft drop-shadow on the active skel-group as a whole.
-(() => {
+// Applique une valeur (stroke / opacity / glow) sur les vars CSS pour le
+// niveau cible. Met aussi à jour les anciennes vars (--stroke-w sans
+// suffixe) pour préserver le fallback côté player si CSS pas migré.
+function _applyLevelProp(level, prop, value) {
   const root = document.documentElement;
-  const inp = $('glow'), val = $('glow-val');
-  function apply(v, fromUser) {
-    const f = Number(v);
-    val.textContent = f.toFixed(2);
-    root.style.setProperty('--glow-r', `${(f * 18).toFixed(1)}px`);
-    root.style.setProperty('--glow-a', (f * 0.95).toFixed(3));
-    document.body.classList.toggle('no-glow', f === 0);
-    localStorage.setItem('accroche-glow', v);
-    if (fromUser) pushTraceStyleToScene();
+  const num = Number(value);
+  if (prop === 'stroke') {
+    root.style.setProperty(`--stroke-w-${level}`, String(num));
+  } else if (prop === 'opacity') {
+    root.style.setProperty(`--stroke-opacity-${level}`, String(num));
+  } else if (prop === 'glow') {
+    root.style.setProperty(`--glow-r-${level}`, `${(num * 18).toFixed(1)}px`);
+    root.style.setProperty(`--glow-a-${level}`, (num * 0.95).toFixed(3));
   }
-  const saved = localStorage.getItem('accroche-glow');
-  if (saved !== null) inp.value = saved;
-  apply(inp.value, false);
-  inp.addEventListener('input', e => apply(e.target.value, true));
-})();
+}
 
-// Stroke-width slider — controls how thick the contour appears.
-(() => {
-  const root = document.documentElement;
-  const inp = $('stroke'), val = $('stroke-val');
+// Wire un slider (ID = `${prop}-${level}`, valeur = `${prop}-${level}-val`).
+function _wireTraceSlider(level, prop) {
+  const inp = $(`${prop}-${level}`);
+  const val = $(`${prop}-${level}-val`);
+  if (!inp || !val) return;
+  const fmt = (n) => prop === 'stroke' ? n.toFixed(1) : n.toFixed(2);
   function apply(v, fromUser) {
-    val.textContent = Number(v).toFixed(1);
-    root.style.setProperty('--stroke-w', v);
-    localStorage.setItem('accroche-stroke', v);
+    const num = Number(v);
+    val.textContent = fmt(num);
+    _applyLevelProp(level, prop, num);
+    localStorage.setItem(_lsKey(level, prop), String(num));
     if (fromUser) pushTraceStyleToScene();
   }
-  const saved = localStorage.getItem('accroche-stroke');
-  if (saved !== null) inp.value = saved;
-  apply(inp.value, false);
+  const saved = _readLevelProp(level, prop, TRACE_DEFAULTS[prop]);
+  inp.value = saved;
+  apply(saved, false);
   inp.addEventListener('input', e => apply(e.target.value, true));
-})();
+}
 
-// Stroke-opacity slider — slight transparency on the contour for a softer look.
-(() => {
-  const root = document.documentElement;
-  const inp = $('opacity'), val = $('opacity-val');
-  function apply(v, fromUser) {
-    val.textContent = Number(v).toFixed(2);
-    root.style.setProperty('--stroke-opacity', v);
-    localStorage.setItem('accroche-opacity', v);
-    if (fromUser) pushTraceStyleToScene();
-  }
-  const saved = localStorage.getItem('accroche-opacity');
-  if (saved !== null) inp.value = saved;
-  apply(inp.value, false);
-  inp.addEventListener('input', e => apply(e.target.value, true));
-})();
+['n1', 'n2'].forEach(level => {
+  ['stroke', 'opacity', 'glow'].forEach(prop => _wireTraceSlider(level, prop));
+});
 
 // Au chargement d'un module : si meta.trace_style existe, on pré-remplit
-// les sliders + applique. Comme ça l'éditeur reflète d'emblée le style du
-// module ouvert (au lieu de toujours partir du localStorage).
+// les sliders. Accepte le NOUVEAU format ({n1:{}, n2:{}}) et l'ANCIEN
+// (stroke/opacity/glow mono-niveau, promu vers les 2 niveaux).
 function applyTraceStyleFromMeta(meta) {
   if (!meta || !meta.trace_style) return;
   const ts = meta.trace_style;
+  // Promotion ancien format → nouveau
+  const n1 = ts.n1 || ts;
+  const n2 = ts.n2 || ts;
+  for (const [level, src] of [['n1', n1], ['n2', n2]]) {
+    for (const prop of ['stroke', 'opacity', 'glow']) {
+      const v = src && typeof src[prop] === 'number' ? src[prop] : null;
+      if (v === null) continue;
+      const inp = $(`${prop}-${level}`);
+      const val = $(`${prop}-${level}-val`);
+      if (inp) inp.value = v;
+      if (val) val.textContent = prop === 'stroke' ? v.toFixed(1) : v.toFixed(2);
+      _applyLevelProp(level, prop, v);
+      localStorage.setItem(_lsKey(level, prop), String(v));
+    }
+  }
+  // Met aussi les anciennes vars CSS (sans suffixe) pour le fallback du
+  // PLAYER s'il n'est pas encore migré (sur les nouveaux navigateurs c'est
+  // le n2 qui domine puisque .quest-skel l'utilisera).
   const root = document.documentElement;
-  if (typeof ts.stroke === 'number') {
-    $('stroke').value = ts.stroke;
-    $('stroke-val').textContent = ts.stroke.toFixed(1);
-    root.style.setProperty('--stroke-w', String(ts.stroke));
-    localStorage.setItem('accroche-stroke', String(ts.stroke));
+  if (typeof n1.stroke === 'number')  root.style.setProperty('--stroke-w', String(n1.stroke));
+  if (typeof n1.opacity === 'number') root.style.setProperty('--stroke-opacity', String(n1.opacity));
+  if (typeof n1.glow === 'number') {
+    root.style.setProperty('--glow-r', `${(n1.glow * 18).toFixed(1)}px`);
+    root.style.setProperty('--glow-a', (n1.glow * 0.95).toFixed(3));
+    document.body.classList.toggle('no-glow', n1.glow === 0 && (typeof n2.glow !== 'number' || n2.glow === 0));
   }
-  if (typeof ts.opacity === 'number') {
-    $('opacity').value = ts.opacity;
-    $('opacity-val').textContent = ts.opacity.toFixed(2);
-    root.style.setProperty('--stroke-opacity', String(ts.opacity));
-    localStorage.setItem('accroche-opacity', String(ts.opacity));
-  }
-  if (typeof ts.glow === 'number') {
-    $('glow').value = ts.glow;
-    $('glow-val').textContent = ts.glow.toFixed(2);
-    root.style.setProperty('--glow-r', `${(ts.glow * 18).toFixed(1)}px`);
-    root.style.setProperty('--glow-a', (ts.glow * 0.95).toFixed(3));
-    document.body.classList.toggle('no-glow', ts.glow === 0);
-    localStorage.setItem('accroche-glow', String(ts.glow));
-  }
+  // Empêche le code legacy de planter — l'ancien bloc de code lisait
+  // applyTraceStyleFromMeta pour stroke/opacity/glow mono.
+  return;
 }
 
 $('gen-master').addEventListener('click', async () => {
@@ -2504,7 +2523,11 @@ $('quests-list-close').addEventListener('click', () => {
 //   - Outils-modale (quests)                    : ouvrent directement la
 //     modale de gestion, et FERMENT le rail.
 const TOOL_PANELS  = new Set(['trace', 'source', 'module']);
-const TOOL_MODES   = new Set(['frames', 'characters']);
+// 'frames' et 'characters' ouvrent un panneau ET activent un mode interactif
+// (édition de cadres / édition par masque). Ils ne sont plus dans TOOL_MODES
+// pour passer par le pipeline showToolPane standard.
+const TOOL_MODES   = new Set();
+const TOOL_MODES_INTERACTIVE = new Set(['frames', 'characters']);
 const TOOL_MODALS  = new Set(['missions', 'sounds']);
 
 function showToolPane(name) {
@@ -2520,14 +2543,22 @@ function clearActiveTool() {
 function openTopRail() { $('top-rail').classList.add('open'); }
 function closeTopRail() { $('top-rail').classList.remove('open'); clearActiveTool(); }
 
-async function selectTool(name) {
-  if (TOOL_MODES.has(name)) {
-    closeTopRail();
-    if (name === 'frames')     await enterEditor();
-    if (name === 'characters') enterCharacterEditor();
-    return;
+// Quand on quitte la sélection courante, on sort proprement des modes
+// interactifs (cadres, personnages) pour que les overlays disparaissent
+// du master à l'écran. Aucune save de données ici (juste cleanup visuel).
+async function _leaveCurrentInteractiveMode() {
+  if (document.body.classList.contains('state-editor')) {
+    try { await exitEditor(true); } catch {}
   }
+  if (document.body.classList.contains('state-character')) {
+    try { exitCharacterEditor(); } catch {}
+  }
+}
+
+async function selectTool(name) {
+  // 1. Modales (Missions / Sons) : sort des modes interactifs + ouvre la modale.
   if (TOOL_MODALS.has(name)) {
+    await _leaveCurrentInteractiveMode();
     closeTopRail();
     if (name === 'missions') {
       if (!sceneState.id) {
@@ -2546,14 +2577,28 @@ async function selectTool(name) {
     }
     return;
   }
-  // Outil-panneau : toggle. Re-cliquer sur le bouton actif ferme le rail.
-  // Cliquer sur un autre bouton-panneau bascule vers ce panneau.
+
+  // 2. Panneau-outil (Tracé, Source, Cadres, Personnages, Module) : toggle.
   const isActive = document.querySelector(`.tool-btn[data-tool="${name}"]`)?.classList.contains('active');
   if (isActive) {
+    // Re-cliquer sur l'onglet actif ferme le rail ET sort de tout mode interactif
     closeTopRail();
-  } else {
-    openTopRail();
-    showToolPane(name);
+    await _leaveCurrentInteractiveMode();
+    return;
+  }
+
+  // Switch d'onglet : sort de tout mode interactif AVANT de changer (sinon les
+  // cadres / le masque persistent à l'écran sous le nouvel onglet).
+  await _leaveCurrentInteractiveMode();
+  openTopRail();
+  showToolPane(name);
+
+  // 3. Pour les onglets qui ont AUSSI un mode interactif (Cadres, Personnages),
+  // on active le mode après l'affichage du panneau pour que les overlays se
+  // rendent correctement (image-layer/character-layer visibles).
+  if (TOOL_MODES_INTERACTIVE.has(name)) {
+    if (name === 'frames')     await enterEditor();
+    if (name === 'characters') enterCharacterEditor();
   }
 }
 

@@ -1388,6 +1388,71 @@
     font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
     color: rgba(255,255,255,0.55); font-weight: 500;
   }
+  .tool-pane-hint {
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    margin: -4px 0 12px 0; line-height: 1.45;
+  }
+  .tool-pane-actions {
+    display: flex; gap: 8px;
+  }
+  .tool-pane-actions .btn { flex: 1; margin-top: 0; min-height: 36px; }
+  .tool-pane-brush-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 10px; padding: 8px 10px;
+    background: rgba(0,0,0,0.30);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+  }
+  .tool-pane-brush-row input[type="range"] { flex: 1; }
+  .tool-pane-brush-row .label-mini {
+    font-size: 10px; color: rgba(255,255,255,0.5);
+    letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* ─── Tracé : 2 groupes compacts (Niveau 1 blanc / Niveau 2 or) ─── */
+  .trace-groups {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .trace-group {
+    background: rgba(0,0,0,0.30);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 8px 10px 6px;
+  }
+  .trace-group[data-level="n1"] { border-color: rgba(255,255,255,0.20); }
+  .trace-group[data-level="n2"] { border-color: rgba(212,184,122,0.35); }
+  .trace-group-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .trace-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .trace-group-title {
+    font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: rgba(255,255,255,0.75); font-weight: 500;
+    flex: 1;
+  }
+  .trace-preview {
+    width: 60px; height: 18px; flex-shrink: 0;
+  }
+  .trace-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 36px;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 11px;
+  }
+  .trace-row label { color: rgba(255,255,255,0.55); }
+  .trace-row input[type="range"] { width: 100%; margin: 0; }
+  .trace-val {
+    font-variant-numeric: tabular-nums;
+    color: rgba(212,184,122,0.95);
+    font-size: 10px; text-align: right;
+  }
+  body.mode-mobile .trace-groups { grid-template-columns: 1fr; }
 
   body.state-imageB #top-rail,
   body.state-imageC #top-rail { display: none; }
@@ -1592,21 +1657,79 @@
       </button>
     </div>
 
-    <!-- Sous-panneau : Tracé -->
+    <!-- Sous-panneau : Tracé (2 groupes, niveau 1 blanc / niveau 2 or) -->
     <div class="tool-pane" data-pane="trace">
-      <h4>Style du tracé</h4>
-      <div class="field">
-        <div class="field-row"><span class="field-label">Épaisseur</span><span class="field-value" id="stroke-val">3.0</span></div>
-        <input type="range" id="stroke" min="1" max="6" step="0.1" value="3">
+      <div class="trace-groups">
+        <!-- ───── Niveau 1 — tracé BLANC (observation) ───── -->
+        <div class="trace-group" data-level="n1">
+          <div class="trace-group-head">
+            <span class="trace-dot" style="background:rgba(255,255,255,0.95);box-shadow:0 0 6px rgba(255,255,255,0.65);"></span>
+            <span class="trace-group-title">Niveau 1 · observation</span>
+            <svg class="trace-preview" viewBox="0 0 60 18" aria-hidden="true">
+              <path d="M2 12 Q 15 2, 30 9 T 58 6"
+                    stroke="rgba(255,255,255,0.95)"
+                    stroke-width="var(--stroke-w-n1, 3)"
+                    stroke-opacity="var(--stroke-opacity-n1, 0.92)"
+                    fill="none" stroke-linecap="round"
+                    style="filter: drop-shadow(0 0 var(--glow-r-n1, 0px) rgba(255,255,255,var(--glow-a-n1, 0)));" />
+            </svg>
+          </div>
+          <div class="trace-row">
+            <label>Épaisseur</label>
+            <input type="range" id="stroke-n1" min="1" max="6" step="0.1" value="3">
+            <span class="trace-val" id="stroke-n1-val">3.0</span>
+          </div>
+          <div class="trace-row">
+            <label>Opacité</label>
+            <input type="range" id="opacity-n1" min="0.3" max="1" step="0.02" value="0.92">
+            <span class="trace-val" id="opacity-n1-val">0.92</span>
+          </div>
+          <div class="trace-row">
+            <label>Lumière</label>
+            <input type="range" id="glow-n1" min="0" max="1" step="0.05" value="0">
+            <span class="trace-val" id="glow-n1-val">0.00</span>
+          </div>
+        </div>
+
+        <!-- ───── Niveau 2 — tracé OR (quête) ───── -->
+        <div class="trace-group" data-level="n2">
+          <div class="trace-group-head">
+            <span class="trace-dot" style="background:rgba(212,184,122,0.95);box-shadow:0 0 6px rgba(212,184,122,0.65);"></span>
+            <span class="trace-group-title">Niveau 2 · quête</span>
+            <svg class="trace-preview" viewBox="0 0 60 18" aria-hidden="true">
+              <path d="M2 12 Q 15 2, 30 9 T 58 6"
+                    stroke="rgba(212,184,122,0.95)"
+                    stroke-width="var(--stroke-w-n2, 3)"
+                    stroke-opacity="var(--stroke-opacity-n2, 0.92)"
+                    fill="none" stroke-linecap="round"
+                    style="filter: drop-shadow(0 0 var(--glow-r-n2, 0px) rgba(212,184,122,var(--glow-a-n2, 0)));" />
+            </svg>
+          </div>
+          <div class="trace-row">
+            <label>Épaisseur</label>
+            <input type="range" id="stroke-n2" min="1" max="6" step="0.1" value="3">
+            <span class="trace-val" id="stroke-n2-val">3.0</span>
+          </div>
+          <div class="trace-row">
+            <label>Opacité</label>
+            <input type="range" id="opacity-n2" min="0.3" max="1" step="0.02" value="0.92">
+            <span class="trace-val" id="opacity-n2-val">0.92</span>
+          </div>
+          <div class="trace-row">
+            <label>Lumière</label>
+            <input type="range" id="glow-n2" min="0" max="1" step="0.05" value="0">
+            <span class="trace-val" id="glow-n2-val">0.00</span>
+          </div>
+        </div>
       </div>
-      <div class="field">
-        <div class="field-row"><span class="field-label">Opacité</span><span class="field-value" id="opacity-val">0.92</span></div>
-        <input type="range" id="opacity" min="0.3" max="1" step="0.02" value="0.92">
-      </div>
-      <div class="field">
-        <div class="field-row"><span class="field-label">Lumière (glow)</span><span class="field-value" id="glow-val">0.00</span></div>
-        <input type="range" id="glow" min="0" max="1" step="0.05" value="0">
-      </div>
+      <!-- Boutons fantômes pour compat avec d'éventuels listeners externes
+           référençant les anciens IDs uniques (stroke / opacity / glow). -->
+      <input type="hidden" id="stroke" value="3">
+      <input type="hidden" id="opacity" value="0.92">
+      <input type="hidden" id="glow" value="0">
+      <span id="stroke-val" style="display:none;"></span>
+      <span id="opacity-val" style="display:none;"></span>
+      <span id="glow-val" style="display:none;"></span>
     </div>
 
     <!-- Sous-panneau : Source -->
@@ -1620,8 +1743,39 @@
       <input type="file" id="upload-input" accept="image/*">
     </div>
 
-    <!-- Cadres / Quêtes / Personnages : pas de panneau — le clic sur leur
-         bouton entre directement dans le mode interactif (cf. selectTool). -->
+    <!-- Sous-panneau : Cadres (intègre l'ex éditor-toolbar) -->
+    <div class="tool-pane" data-pane="frames">
+      <h4>Tracer des cadres</h4>
+      <p class="tool-pane-hint">Drag sur l'image pour tracer un cadre, poignées 🟦 pour redimensionner.</p>
+      <div class="tool-pane-actions">
+        <button class="btn" id="add-observation-question" type="button">+ Question d'observation</button>
+        <button class="btn" id="manage-questions" type="button">Questions niv. 1</button>
+      </div>
+      <div class="tool-pane-actions" style="margin-top:8px;">
+        <button class="btn" id="exit-editor" type="button">Quitter</button>
+        <button class="btn primary" id="generate-from-editor" type="button">Sauver et générer</button>
+      </div>
+    </div>
+
+    <!-- Sous-panneau : Personnages (intègre l'ex character-toolbar) -->
+    <div class="tool-pane" data-pane="characters">
+      <h4>Édition par masque</h4>
+      <p class="tool-pane-hint">Trace un cadre puis peins la zone à modifier. Décris ton intention dans le panneau prompt à droite.</p>
+      <div class="tool-pane-actions">
+        <button class="btn" id="char-mode-rect" type="button" title="Tracer / déplacer le cadre">⬚ Cadre</button>
+        <button class="btn" id="char-mode-paint" type="button" title="Peindre la zone à modifier">🖌 Brosse</button>
+        <button class="btn" id="char-mode-erase" type="button" title="Effacer le mask">⌫ Gomme</button>
+      </div>
+      <div class="tool-pane-brush-row">
+        <span class="label-mini">Taille brosse</span>
+        <input type="range" id="char-brush-size" min="6" max="120" step="2" value="40">
+      </div>
+      <div class="tool-pane-actions" style="margin-top:8px;">
+        <button class="btn" id="char-clear-mask" type="button" title="Effacer tout le masque">Effacer mask</button>
+        <button class="btn" id="char-clear-rect" type="button" title="Refaire le cadre">Refaire le cadre</button>
+        <button class="btn" id="exit-character" type="button">Quitter</button>
+      </div>
+    </div>
 
     <!-- Boutons fantômes pour préserver les listeners app.js historiques -->
     <button id="enter-editor" style="display:none;" aria-hidden="true"></button>
@@ -1659,17 +1813,8 @@
 <button id="settings-btn" style="display:none;" aria-hidden="true"></button>
 <div id="settings-panel" style="display:none;" aria-hidden="true"></div>
 
-<div id="editor-toolbar">
-  <span class="hint" style="font-size:11px;color:rgba(255,255,255,0.55);padding:0 8px;">
-    Trace un cadre sur l'image (drag), redimensionne avec les poignées
-  </span>
-  <span class="sep"></span>
-  <button id="add-observation-question">+ Question d'observation</button>
-  <button id="manage-questions">Questions niv. 1</button>
-  <span class="sep"></span>
-  <button id="exit-editor">Quitter</button>
-  <button class="primary" id="generate-from-editor">Sauver et générer</button>
-</div>
+<!-- editor-toolbar : SUPPRIMÉE — les boutons ont migré dans le tool-pane
+     data-pane="frames" du top-rail. Les IDs sont conservés là-bas. -->
 
 <div id="box-panel">
   <div class="box-panel-header">
@@ -1770,20 +1915,8 @@
   </div>
 </div>
 
-<!-- ============ Mode Personnages : toolbar + panneau prompt ============ -->
-<div id="character-toolbar">
-  <button id="char-mode-rect" class="active" title="Tracer / déplacer le cadre">⬚ Cadre</button>
-  <button id="char-mode-paint" title="Peindre la zone à modifier">🖌 Brosse</button>
-  <button id="char-mode-erase" title="Effacer le mask">⌫ Gomme</button>
-  <span class="sep"></span>
-  <span class="label-mini">Taille</span>
-  <input type="range" id="char-brush-size" min="6" max="120" step="2" value="40">
-  <span class="sep"></span>
-  <button id="char-clear-mask" title="Effacer tout le masque">Effacer mask</button>
-  <button id="char-clear-rect" title="Refaire le cadre">Refaire le cadre</button>
-  <span class="sep"></span>
-  <button id="exit-character">Quitter</button>
-</div>
+<!-- character-toolbar : SUPPRIMÉE — les boutons ont migré dans le tool-pane
+     data-pane="characters" du top-rail. Les IDs sont conservés là-bas. -->
 
 <div id="character-panel">
   <div>

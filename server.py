@@ -1049,22 +1049,36 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, _stop_tunnel())
             return
 
-        # Régénère les descriptions vision factuelles de TOUS les cadres
-        # d'une scène (ou de toutes les scènes si scene_ids omis).
-        # Body : { scene_ids?: [string], force?: bool }
+        # Régénère les descriptions vision factuelles des cadres d'une scène.
+        # Body : { scene_ids?: [string], box_ids?: [string], force?: bool }
+        #   - scene_ids absent → toutes les scènes du dossier
+        #   - box_ids absent → tous les cadres de chaque scène
+        #   - box_ids présent → uniquement ces cadres (utile pour analyse
+        #     sélective déclenchée depuis la modale UI)
         if path == "/api/describe-boxes":
             payload = self._read_json() or {}
             sids = payload.get("scene_ids")
+            box_ids = payload.get("box_ids") or []
             force = bool(payload.get("force", False))
             try:
                 sys.path.insert(0, str(ROOT / "pipeline"))
-                from generate import describe_all_boxes  # noqa
+                from generate import describe_all_boxes, describe_box  # noqa
                 if not sids:
                     sids = [p.name for p in SCENES_DIR.iterdir() if p.is_dir() and (p / "meta.json").exists()]
                 report = {}
                 for sid in sids:
                     try:
-                        report[sid] = describe_all_boxes(sid, force=force)
+                        if box_ids:
+                            # Mode sélectif : on n'analyse que les cadres demandés
+                            scene_rep: dict = {}
+                            for bid in box_ids:
+                                try:
+                                    scene_rep[str(bid)] = describe_box(sid, str(bid), force=force)
+                                except Exception as e:
+                                    scene_rep[str(bid)] = f"(échec: {e})"
+                            report[sid] = scene_rep
+                        else:
+                            report[sid] = describe_all_boxes(sid, force=force)
                     except Exception as e:
                         report[sid] = {"error": str(e)}
             except Exception as e:

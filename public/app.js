@@ -3172,34 +3172,83 @@ $('gen-n2')?.addEventListener('click', () => doGenerate(2));
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
-$('describe-boxes')?.addEventListener('click', async () => {
+// ─── Modale « Analyser les cadres » : choix multi-cadres ────────────
+function openDescribeModal() {
   if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
-  const force = confirm(
-    'RÉ-DÉCRIRE LES CADRES (vision)\n\n' +
-    'GPT-5.4 va regarder l\'image de chaque cadre et écrire une description ' +
-    'factuelle MAX-DÉTAIL (vêtements, accessoires, posture, regard) sans rien ' +
-    'inventer. Ces descriptions deviennent le label [cadre: …] dans le corpus RAG.\n\n' +
-    'OK = FORCE la régénération (écrase les descriptions existantes).\n' +
-    'Annuler = ne calcule que les cadres SANS description.'
-  );
-  showGptOverlay('Vision en cours sur chaque cadre…');
+  const boxes = sceneState.meta?.boxes || [];
+  if (!boxes.length) { alert('Aucun cadre dans cette scène.'); return; }
+  const list = $('desc-boxes-list');
+  list.innerHTML = '';
+  for (const b of boxes) {
+    const bid = String(b.id);
+    const hasAnalysis = !!(b._analysis && (b._analysis.personnages?.length || b._description));
+    const subj = (b.subject || '').trim() || '(sans sujet)';
+    const status = hasAnalysis
+      ? '<span style="color:rgba(80,227,164,0.85);font-size:11px;">✓ analysé</span>'
+      : '<span style="color:rgba(255,184,77,0.85);font-size:11px;">⚠ pas d\'analyse</span>';
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;';
+    row.innerHTML = `
+      <input type="checkbox" class="desc-box-cb" data-bid="${escapeHtmlAttr(bid)}" data-has="${hasAnalysis ? '1' : '0'}" ${hasAnalysis ? '' : 'checked'}>
+      <span style="flex:1;font-size:13px;">
+        <strong style="color:rgba(212,184,122,0.95);">Cadre ${escapeHtmlAttr(bid)}</strong>
+        · <span style="color:rgba(255,255,255,0.85);">${escapeHtmlAttr(subj)}</span>
+      </span>
+      ${status}
+    `;
+    list.appendChild(row);
+  }
+  $('desc-force').checked = false;
+  $('describe-modal').classList.add('shown');
+}
+function closeDescribeModal() {
+  $('describe-modal').classList.remove('shown');
+}
+function _descCheckboxes() {
+  return Array.from(document.querySelectorAll('#desc-boxes-list .desc-box-cb'));
+}
+$('desc-all')?.addEventListener('click', () => {
+  _descCheckboxes().forEach(cb => { cb.checked = true; });
+});
+$('desc-none')?.addEventListener('click', () => {
+  _descCheckboxes().forEach(cb => { cb.checked = false; });
+});
+$('desc-missing')?.addEventListener('click', () => {
+  _descCheckboxes().forEach(cb => { cb.checked = cb.dataset.has !== '1'; });
+});
+$('desc-cancel')?.addEventListener('click', closeDescribeModal);
+$('describe-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('describe-modal')) closeDescribeModal();
+});
+
+$('desc-launch')?.addEventListener('click', async () => {
+  const selected = _descCheckboxes().filter(cb => cb.checked).map(cb => cb.dataset.bid);
+  if (!selected.length) { alert('Coche au moins un cadre.'); return; }
+  const force = $('desc-force').checked;
+  closeDescribeModal();
+  showGptOverlay(`Vision en cours sur ${selected.length} cadre(s)…`);
   try {
     const r = await fetch('/api/describe-boxes', {
       method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ scene_ids: [sceneState.id], force }),
+      body: JSON.stringify({
+        scene_ids: [sceneState.id], box_ids: selected, force,
+      }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
     const rep = j.report?.[sceneState.id] || {};
     const lines = Object.entries(rep).map(([bid, d]) =>
       `· Cadre ${bid} : ${String(d).slice(0, 100)}…`).join('\n');
-    alert('✓ Descriptions générées\n\n' + (lines || '(aucun cadre)'));
+    alert(`✓ ${Object.keys(rep).length} cadre(s) analysé(s)\n\n${lines || '(aucun cadre)'}`);
+    await loadCurrentSceneMeta();  // rafraîchit la fiche client
   } catch (e) {
     alert('Échec : ' + e.message);
   } finally {
     hideGptOverlay();
   }
 });
+
+$('describe-boxes')?.addEventListener('click', openDescribeModal);
 
 $('bootstrap-corpus')?.addEventListener('click', async () => {
   if (!confirm(

@@ -1390,28 +1390,71 @@ function closeQuestionModal() {
 function addChoiceRow(container, value = '', marked = false, isQuest = false) {
   const row = document.createElement('div');
   row.className = 'choice-row' + (marked ? (isQuest ? ' is-best' : ' is-correct') : '');
+
+  // Champ texte principal :
+  //  - N1 (question)  : input + bouton coche cliquable pour marquer la bonne réponse.
+  //  - N2 (quête)     : textarea AUTO-GROW pour que l'accroche entière soit lisible,
+  //                     pas de bouton coche (l'IA fixe le best, l'utilisateur ne peut
+  //                     pas le déplacer).
+  const valueEsc = (value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const markBtn = isQuest
+    ? ''  // Pas de bouton coche en mode quête (lecture seule via badge)
+    : `<button type="button" class="choice-mark" title="Bonne réponse">${marked ? '✓' : ''}</button>`;
+  const textField = isQuest
+    ? `<textarea class="choice-text" rows="1" placeholder="Texte du choix">${valueEsc}</textarea>`
+    : `<input type="text" class="choice-text" placeholder="Texte du choix" value="${valueEsc}">`;
+  const explainBlock = isQuest
+    ? `<div class="choice-explain-label">Explication / feedback après réponse</div>
+       <textarea class="choice-explain" placeholder="Explication affichée au joueur après son choix"></textarea>`
+    : '';
+
   row.innerHTML = `
-    <button type="button" class="choice-mark" title="${isQuest ? 'Meilleur choix' : 'Bonne réponse'}">${marked ? '✓' : ''}</button>
+    ${markBtn}
     <div class="choice-body">
-      <input type="text" placeholder="Texte du choix" value="${value.replace(/"/g, '&quot;')}">
-      ${isQuest ? '<textarea placeholder="Explication / feedback après réponse"></textarea>' : ''}
+      ${textField}
+      ${explainBlock}
     </div>
     <button type="button" class="choice-del" title="Supprimer">×</button>`;
   container.appendChild(row);
 
-  row.querySelector('.choice-mark').addEventListener('click', () => {
-    const cls = isQuest ? 'is-best' : 'is-correct';
-    container.querySelectorAll('.choice-row').forEach(r => {
-      r.classList.remove(cls);
-      r.querySelector('.choice-mark').textContent = '';
+  // Bouton coche : uniquement pour les questions N1.
+  if (!isQuest) {
+    row.querySelector('.choice-mark').addEventListener('click', () => {
+      const cls = 'is-correct';
+      container.querySelectorAll('.choice-row').forEach(r => {
+        r.classList.remove(cls);
+        r.querySelector('.choice-mark').textContent = '';
+      });
+      row.classList.add(cls);
+      row.querySelector('.choice-mark').textContent = '✓';
     });
-    row.classList.add(cls);
-    row.querySelector('.choice-mark').textContent = '✓';
-  });
+  } else {
+    // Auto-grow : la textarea du texte d'accroche s'adapte en hauteur pour
+    // que l'accroche soit toujours intégralement lisible (pas tronquée à
+    // droite). Déclenché à la frappe + au remplissage programmatique.
+    const ta = row.querySelector('.choice-text');
+    const autoGrow = () => {
+      ta.style.height = 'auto';
+      ta.style.height = (ta.scrollHeight + 2) + 'px';
+    };
+    ta.addEventListener('input', autoGrow);
+    // Première mesure : différée pour que le layout connaisse la largeur.
+    requestAnimationFrame(autoGrow);
+  }
+
   row.querySelector('.choice-del').addEventListener('click', () => {
     row.remove();
   });
   return row;
+}
+
+// Helper : déclenche un re-auto-grow sur les textareas .choice-text déjà
+// montées (utile après un remplissage programmatique de la valeur).
+function _autoGrowChoiceText(row) {
+  const ta = row?.querySelector('.choice-text');
+  if (!ta || ta.tagName !== 'TEXTAREA') return;
+  ta.style.height = 'auto';
+  ta.style.height = (ta.scrollHeight + 2) + 'px';
 }
 
 function readChoices(container, isQuest = false) {
@@ -1422,11 +1465,11 @@ function readChoices(container, isQuest = false) {
     const cls = isQuest ? 'is-best' : 'is-correct';
     if (row.classList.contains(cls)) correctIdx = i;
     if (isQuest) {
-      const text = row.querySelector('input').value.trim();
-      const explanation = row.querySelector('textarea').value.trim();
+      const text = row.querySelector('.choice-text').value.trim();
+      const explanation = row.querySelector('.choice-explain').value.trim();
       if (text) choices.push({ text, explanation });
     } else {
-      const text = row.querySelector('input').value.trim();
+      const text = row.querySelector('.choice-text, input').value.trim();
       if (text) choices.push(text);
     }
   });
@@ -1892,7 +1935,7 @@ function openQuestModal(boxId, idx = -1) {
   choices.forEach((c, i) => {
     const isBest = i === bestIdx;
     const row = addChoiceRow(cbox, c.text || '', isBest, true);
-    if (c.explanation) row.querySelector('textarea').value = c.explanation;
+    if (c.explanation) row.querySelector('.choice-explain').value = c.explanation;
 
     // Badge de statut en haut de la row (info-only, non éditable)
     const badge = document.createElement('div');
@@ -1901,11 +1944,13 @@ function openQuestModal(boxId, idx = -1) {
     row.insertBefore(badge, row.firstChild);
 
     // Attache rating sur le TEXTE et l'EXPLICATION du choix
-    const inputEl = row.querySelector('input');
-    const explainTa = row.querySelector('textarea');
+    const inputEl = row.querySelector('.choice-text');
+    const explainTa = row.querySelector('.choice-explain');
     const existing = c._field_ratings || {};
     const rText = attachFieldRating(inputEl, 'choice_text', isBest, existing.text || {});
     const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, existing.explanation || {});
+    // Re-mesure auto-grow après injection programmatique du contenu
+    requestAnimationFrame(() => _autoGrowChoiceText(row));
     _qmFieldRaters.choices.push({ rText, rExpl, isBest });
   });
 
@@ -2218,8 +2263,8 @@ $('qu-add-choice').addEventListener('click', () => {
   badge.className = 'choice-kind-badge';
   badge.textContent = 'DISTRACTEUR';
   row.insertBefore(badge, row.firstChild);
-  const inputEl = row.querySelector('input');
-  const explainTa = row.querySelector('textarea');
+  const inputEl = row.querySelector('.choice-text');
+  const explainTa = row.querySelector('.choice-explain');
   const rText = attachFieldRating(inputEl, 'choice_text', false, {});
   const rExpl = attachFieldRating(explainTa, 'choice_explain', false, {});
   _qmFieldRaters?.choices?.push({ rText, rExpl, isBest: false });
@@ -2261,16 +2306,17 @@ $('qu-gen-btn').addEventListener('click', async () => {
     (quest.dialogue_choices || []).forEach((c, i) => {
       const isBest = !!c.is_best;
       const row = addChoiceRow(cbox, c.text || '', isBest, true);
-      if (c.explanation) row.querySelector('textarea').value = c.explanation;
+      if (c.explanation) row.querySelector('.choice-explain').value = c.explanation;
       const badge = document.createElement('div');
       badge.className = 'choice-kind-badge ' + (isBest ? 'best' : '');
       badge.textContent = isBest ? '★ MEILLEURE ACCROCHE' : 'DISTRACTEUR';
       row.insertBefore(badge, row.firstChild);
-      const inputEl = row.querySelector('input');
-      const explainTa = row.querySelector('textarea');
+      const inputEl = row.querySelector('.choice-text');
+      const explainTa = row.querySelector('.choice-explain');
       const rText = attachFieldRating(inputEl, 'choice_text', isBest, {});
       const rExpl = attachFieldRating(explainTa, 'choice_explain', isBest, {});
       _qmFieldRaters.choices.push({ rText, rExpl, isBest });
+      requestAnimationFrame(() => _autoGrowChoiceText(row));
     });
   } catch (e) {
     alert('Génération échouée : ' + e.message);

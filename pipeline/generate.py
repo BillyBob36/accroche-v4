@@ -56,7 +56,56 @@ def read_corrections(level: int) -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def append_correction(level: int, entry: dict) -> None:
+def purge_correction_target(level: int, match_fields: dict) -> int:
+    """Retire du JSONL corrections_n{level}.jsonl toutes les entrées dont
+    TOUS les champs `match_fields` correspondent. Réécrit le fichier sans
+    ces entrées. Préserve l'historique des entrées non-matchées.
+
+    Utilisé pour ÉVITER L'ACCUMULATION CONTRADICTOIRE quand l'utilisateur
+    change d'avis sur une notation : on retire d'abord toutes les
+    notations antérieures pour la MÊME cible logique (identifiée par
+    item_id + kind + éventuellement choice_idx) avant d'append la
+    nouvelle. Sinon le RAG injecterait à la fois « good » et « refused »
+    pour le même item → contradiction qui perturbe GPT.
+
+    Sécurité : on ne purge JAMAIS les entrées seed (`scene='_seed'`)
+    ni les entrées bootstrap (`bootstrap: True`) — celles-ci sont
+    gérées séparément via leur propre versioning.
+
+    Renvoie le nombre d'entrées purgées.
+    """
+    if not match_fields:
+        return 0
+    p = DATA / f"corrections_n{level}.jsonl"
+    if not p.exists():
+        return 0
+    lines = p.read_text(encoding="utf-8").splitlines()
+    kept: list[str] = []
+    purged = 0
+    for raw in lines:
+        s = raw.strip()
+        if not s:
+            continue
+        try:
+            e = json.loads(s)
+        except json.JSONDecodeError:
+            kept.append(raw)
+            continue
+        # Skip seeds / bootstraps (préserver l'ancrage initial du RAG)
+        if e.get("scene") == "_seed" or e.get("bootstrap") is True:
+            kept.append(raw)
+            continue
+        # Match si TOUS les champs de match_fields correspondent.
+        if all(e.get(k) == v for k, v in match_fields.items()):
+            purged += 1
+        else:
+            kept.append(raw)
+    if purged:
+        p.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    return purged
+
+
+def append_correction(level: int, entry: dict, replace_target: dict | None = None) -> int:
     """Append une entrée de correction aux deux stockages :
 
     1. JSONL (source de vérité) : `data/corrections_n{level}.jsonl` —
@@ -65,10 +114,19 @@ def append_correction(level: int, entry: dict) -> None:
     2. Markdown (lisibilité humain + lecture par le `refine_prompt`) :
        même contenu présenté en bloc YAML-front-matter.
 
-    `entry` doit contenir au minimum : date, scene, level, kind, rating.
-    Les autres champs (content, note, box_*, rating_label, etc.) sont
-    libres et passés tels quels.
+    Si `replace_target` est fourni (dict de champs identifiant la cible
+    logique), on purge d'abord toutes les entrées précédentes correspon-
+    dantes avant d'append la nouvelle. Évite l'accumulation contradictoire
+    quand l'utilisateur change d'avis sur une notation.
+
+    Renvoie le nb d'entrées purgées (0 si pas de remplacement demandé).
     """
+    purged = 0
+    if replace_target:
+        try:
+            purged = purge_correction_target(level, replace_target)
+        except Exception as e:
+            print(f"[append_correction] purge failed: {e}", file=sys.stderr)
     # 1. JSONL avec embedding (source canonique pour le RAG)
     try:
         append_correction_jsonl(level, dict(entry))  # copy pour ne pas polluer
@@ -79,6 +137,8 @@ def append_correction(level: int, entry: dict) -> None:
     p = CORRECTIONS_FILE[level]
     p.parent.mkdir(parents=True, exist_ok=True)
     block = ["---"]
+    if purged:
+        block.append(f"# [remplace {purged} notation(s) précédente(s) pour cette cible]")
     for k, v in entry.items():
         if v is None or v == "":
             continue
@@ -95,6 +155,7 @@ def append_correction(level: int, entry: dict) -> None:
     block.append("")
     with p.open("a", encoding="utf-8") as f:
         f.write("\n".join(block) + "\n")
+    return purged
 
 
 # ----------------- Contexte de scène pour GPT -----------------

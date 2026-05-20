@@ -1464,13 +1464,21 @@ class Handler(SimpleHTTPRequestHandler):
                     "disc_profile": first_perso.get("disc_profile_estime", ""),
                     "code_luxe": first_perso.get("code_luxe_lu", ""),
                 }
-                def _entry(kind, *, content=None, is_best=None, rate_blob=None):
+                def _entry(kind, *, content=None, is_best=None, rate_blob=None,
+                           choice_idx=None):
+                    """Append une entrée correction pour un champ noté. Purge
+                    d'abord les notations précédentes pour la MÊME cible
+                    (kind + item_id + éventuel choice_idx) → évite l'accumu-
+                    lation contradictoire dans le corpus."""
                     if not rate_blob or not rate_blob.get("rating"):
                         return
                     e = dict(base_entry)
                     e["date"] = _now_iso()
                     e["kind"] = kind
                     e["rating"] = rate_blob.get("rating")
+                    e["item_id"] = item_id
+                    if choice_idx is not None:
+                        e["choice_idx"] = int(choice_idx)
                     if rate_blob.get("label"):
                         e["rating_label"] = rate_blob["label"]
                     if content is not None:
@@ -1480,16 +1488,28 @@ class Handler(SimpleHTTPRequestHandler):
                     note = (rate_blob.get("note") or "").strip()
                     if note:
                         e["note"] = note
-                    append_correction(2, e)
+                    # Cible logique = même champ de la même quête (même choix
+                    # pour les fields choice_*). Une notation utilisateur
+                    # antérieure pour cette cible est supprimée du JSONL avant
+                    # l'append, pour que le RAG voie UNE SEULE notation par
+                    # champ (la plus récente, donc reflétant l'avis actuel).
+                    rt = {
+                        "scene": sid, "level": 2,
+                        "kind": kind, "item_id": item_id,
+                    }
+                    if choice_idx is not None:
+                        rt["choice_idx"] = int(choice_idx)
+                    append_correction(2, e, replace_target=rt)
                 _entry("field_title", content=quest_title, rate_blob=payload.get("title_rating"))
                 _entry("field_intro", content=intro_text, rate_blob=payload.get("intro_rating"))
                 for c in (payload.get("choices") or []):
+                    ci = c.get("idx")
                     _entry("field_choice_text",
                            content=c.get("text",""), is_best=c.get("is_best"),
-                           rate_blob=c.get("text_rating"))
+                           rate_blob=c.get("text_rating"), choice_idx=ci)
                     _entry("field_choice_explain",
                            content=c.get("explanation",""), is_best=c.get("is_best"),
-                           rate_blob=c.get("explain_rating"))
+                           rate_blob=c.get("explain_rating"), choice_idx=ci)
                 # Met à jour aussi meta avec les _field_ratings pour réafficher
                 # à la prochaine ouverture du modal.
                 meta = _scene_meta(sid) or {}
@@ -1544,18 +1564,27 @@ class Handler(SimpleHTTPRequestHandler):
                 target = next((x for x in items if x.get("id") == item_id), None)
                 if not target:
                     self._send_json(404, {"error": "item_id introuvable"}); return
-                # Application du rating
+                # Application du rating. À chaque notation, on PURGE
+                # les anciennes notations de la même cible logique
+                # (item_id + kind + éventuel answer_idx) pour ne pas
+                # accumuler de contradiction dans le corpus RAG.
                 from pipeline.generate import append_correction  # noqa
+                entry_kind = (
+                    "question" if (kind == "question" and level == 1)
+                    else "quest" if (kind == "quest" and level == 2)
+                    else kind
+                )
                 if kind in ("question", "quest"):
                     target["_rating"] = rating
                     target["_note"] = note or None
-                    # Append au fichier corrections
+                    target["_bootstrapped"] = False
                     entry = {
                         "date": _now_iso(),
                         "scene": sid,
                         "level": level,
-                        "kind": "question" if level == 1 else "quest",
+                        "kind": entry_kind,
                         "rating": rating,
+                        "item_id": item_id,
                     }
                     if level == 1:
                         entry["question"] = target.get("text")
@@ -1573,7 +1602,10 @@ class Handler(SimpleHTTPRequestHandler):
                             for c in choices)
                     if note:
                         entry["note"] = note
-                    append_correction(level, entry)
+                    append_correction(level, entry, replace_target={
+                        "scene": sid, "level": level,
+                        "kind": entry_kind, "item_id": item_id,
+                    })
                 elif kind == "answer":
                     if answer_idx is None:
                         self._send_json(400, {"error": "answer_idx requis"}); return
@@ -1591,6 +1623,7 @@ class Handler(SimpleHTTPRequestHandler):
                         entry = {
                             "date": _now_iso(), "scene": sid, "level": 1,
                             "kind": "answer", "rating": rating,
+                            "item_id": item_id, "answer_idx": answer_idx,
                             "parent_question": target.get("text"),
                             "answer": choices[answer_idx],
                             "is_correct_in_qcm": is_correct,
@@ -1605,25 +1638,33 @@ class Handler(SimpleHTTPRequestHandler):
                         entry = {
                             "date": _now_iso(), "scene": sid, "level": 2,
                             "kind": "answer", "rating": rating,
+                            "item_id": item_id, "answer_idx": answer_idx,
                             "parent_quest": target.get("title"),
                             "answer": c.get("text"),
                             "is_best": bool(c.get("is_best")),
                         }
                     if note:
                         entry["note"] = note
-                    append_correction(level, entry)
+                    append_correction(level, entry, replace_target={
+                        "scene": sid, "level": level,
+                        "kind": "answer", "item_id": item_id,
+                        "answer_idx": answer_idx,
+                    })
                 elif kind == "explanation":
-                    # Note sur l'explication globale d'une question N1
                     target["_explanation_rating"] = {"rating": rating, "note": note or None}
                     entry = {
                         "date": _now_iso(), "scene": sid, "level": level,
                         "kind": "explanation", "rating": rating,
+                        "item_id": item_id,
                         "parent_question": target.get("text"),
                         "explanation": target.get("explanation"),
                     }
                     if note:
                         entry["note"] = note
-                    append_correction(level, entry)
+                    append_correction(level, entry, replace_target={
+                        "scene": sid, "level": level,
+                        "kind": "explanation", "item_id": item_id,
+                    })
                 else:
                     self._send_json(400, {"error": "kind doit être question|quest|answer|explanation"}); return
                 meta["updated_at"] = _now_iso()

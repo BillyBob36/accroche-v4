@@ -1521,30 +1521,44 @@ function buildQuestionItem(q, i, list) {
       </div>` : '';
 
   const qLbls = RATE_LABELS.question_text.any;
+  // Layout :
+  //   • Ligne 1 (toujours visible)   : toggle ▸ + texte plein largeur + Éditer/Suppr.
+  //   • Ligne 2 (déplié seulement)   : boutons ★ ✦ ✗ pour noter la question.
+  //   • Suit la rate-input-row + le bloc choices/explication (déplié seulement).
   item.innerHTML = `
-    <div style="display:flex;align-items:flex-start;gap:6px;">
+    <div class="ql-row-title">
       <button class="ql-toggle" title="Voir les choix">▸</button>
-      <div class="ql-text" style="flex:1;"><strong>${i + 1}.</strong> ${escapeHtmlAttr(q.text)}${noteHtml}</div>
+      <div class="ql-text"><strong>${i + 1}.</strong> ${escapeHtmlAttr(q.text)}${noteHtml}</div>
+      <div class="ql-actions">
+        <button class="edit">Éditer</button>
+        <button class="del">Suppr</button>
+      </div>
+    </div>
+    <div class="ql-row-controls">
+      <span style="font-size:11px;color:rgba(255,255,255,0.55);margin-right:8px;">Noter la question :</span>
       <span class="rate-btns">
         <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="question" data-action="good"    title="${escapeHtmlAttr(qLbls.good)}">★</button>
         <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="question" data-action="nuanced" title="${escapeHtmlAttr(qLbls.nuanced)}">✦</button>
         <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="question" data-action="refused" title="${escapeHtmlAttr(qLbls.refused)}">✗</button>
       </span>
-      <div class="ql-actions" style="margin-left:6px;">
-        <button class="edit">Éditer</button>
-        <button class="del">Suppr</button>
-      </div>
     </div>
     <div class="rate-input-row" data-for="question"></div>
     <div class="ql-choices">${choicesRowsHtml}${explRowHtml}</div>
   `;
 
-  // Toggle expansion des choix
+  // Toggle expansion des choix. La persistance est gérée via q._expanded
+  // pour que le volet reste ouvert même après une notation (qui ne re-render
+  // plus la liste — cf. submitRating ci-dessous).
   const choicesDiv = item.querySelector('.ql-choices');
   const toggleBtn = item.querySelector('.ql-toggle');
+  if (q._expanded) {
+    choicesDiv.classList.add('shown');
+    toggleBtn.textContent = '▾';
+  }
   toggleBtn.addEventListener('click', () => {
     const shown = choicesDiv.classList.toggle('shown');
     toggleBtn.textContent = shown ? '▾' : '▸';
+    q._expanded = shown;
   });
 
   // Boutons rating sur la QUESTION
@@ -1681,7 +1695,9 @@ async function submitRating(item, q, list, level, kind, rating, note, answerIdx,
   } else if (kind === 'explanation') {
     q._explanation_rating = { rating, note: note || null };
   }
-  // Cas spécial : distracteur refusé → on déclenche la régénération auto
+
+  // Cas spécial : distracteur refusé → régénération auto + rerender
+  // (le distracteur va changer, on doit redessiner pour montrer le nouveau).
   if (kind === 'answer' && rating === 'refused') {
     if (choiceRow) choiceRow.classList.add('regenerating');
     try {
@@ -1694,10 +1710,8 @@ async function submitRating(item, q, list, level, kind, rating, note, answerIdx,
       const rrj = await rr.json();
       if (!rr.ok) throw new Error(rrj.error || 'regen ' + rr.status);
       const newChoice = rrj.new_choice;
-      // Remplace dans le meta local
       if (level === 1) {
         q.choices[answerIdx] = newChoice.text;
-        // Reset le rating du nouveau distracteur
         if (q._choice_ratings) q._choice_ratings[answerIdx] = null;
       } else {
         q.dialogue_choices[answerIdx] = {
@@ -1710,10 +1724,96 @@ async function submitRating(item, q, list, level, kind, rating, note, answerIdx,
       alert('Régénération du distracteur échouée : ' + e.message);
       return;
     }
+    if (level === 1) renderQuestionsList();
+    else renderQuestsList();
+    showRagToast('✓ Distracteur régénéré');
+    return;
   }
-  // Rerender la liste (qui appliquera rated-refused → caché, etc.)
-  if (level === 1) renderQuestionsList();
-  else renderQuestsList();
+
+  // Cas spécial : question (N1) ou quête (N2) notée 'refused' → masquée de
+  // l'UI (filtre rated-refused), donc rerender nécessaire.
+  if ((kind === 'question' || kind === 'quest') && rating === 'refused') {
+    if (level === 1) renderQuestionsList();
+    else renderQuestsList();
+    showRagToast('✓ Noté · question masquée');
+    return;
+  }
+
+  // Cas standard : pas de rerender, on met à jour en PLACE pour que le
+  // volet déplié reste ouvert et que l'utilisateur puisse enchaîner les
+  // notations des réponses sans devoir le rouvrir à chaque fois.
+  _updateRatingInPlace(item, q, kind, rating, note, answerIdx, choiceRow);
+  showRagToast('✓ Noté · envoyé au corpus');
+}
+
+// Met à jour visuellement les boutons rating + le badge de couleur du
+// .ql-item sans rerender la liste complète. Préserve l'expansion utilisateur.
+function _updateRatingInPlace(item, q, kind, rating, note, answerIdx, choiceRow) {
+  // Cible la rangée de boutons concernée par le kind
+  let btnGroup = null;
+  if (kind === 'question' || kind === 'quest') {
+    // Les boutons de la question sont dans .ql-row-controls (N1) ou
+    // n'existent plus sur la liste N2 (notation déplacée dans Éditer).
+    btnGroup = item.querySelector('.ql-row-controls .rate-btns');
+    // Met à jour le liseré coloré gauche du item
+    item.classList.remove('rated-good', 'rated-nuanced', 'rated-refused');
+    item.classList.add(`rated-${rating}`);
+    // Ajoute ou met à jour la note nuancée à côté du texte
+    const txt = item.querySelector('.ql-text');
+    if (txt) {
+      const oldNote = txt.querySelector('.ql-note');
+      if (oldNote) oldNote.remove();
+      if (rating === 'nuanced' && note) {
+        const div = document.createElement('div');
+        div.className = 'ql-note';
+        div.textContent = note;
+        txt.appendChild(div);
+      }
+    }
+    // Une fois la question notée good/nuanced, on active les boutons de
+    // notation des réponses (qui étaient disabled jusque-là).
+    if (rating === 'good' || rating === 'nuanced') {
+      item.querySelectorAll('.rate-btn[data-kind="answer"], .rate-btn[data-kind="explanation"]')
+        .forEach(b => { b.disabled = false; });
+    }
+  } else if (kind === 'answer' || kind === 'explanation') {
+    btnGroup = choiceRow?.querySelector('.rate-btns');
+  }
+  if (!btnGroup) return;
+  // Toggle des classes is-on sur les 3 boutons
+  btnGroup.querySelectorAll('.rate-btn').forEach(b => {
+    b.classList.toggle('is-on', b.dataset.action === rating);
+  });
+}
+
+// Toast discret en bas à droite. Confirme à l'utilisateur que sa
+// notation a bien été envoyée au corpus RAG. S'efface seul après 1.8s.
+function showRagToast(message) {
+  let toast = document.getElementById('rag-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'rag-toast';
+    toast.style.cssText = `
+      position: fixed; bottom: 24px; right: 24px;
+      background: rgba(80, 180, 100, 0.92);
+      color: white; padding: 10px 16px;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 9999;
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 200ms ease, transform 200ms ease;
+      pointer-events: none;
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+  clearTimeout(showRagToast._timer);
+  showRagToast._timer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+  }, 1800);
 }
 
 $('add-observation-question').addEventListener('click', async () => {
@@ -2450,41 +2550,36 @@ function buildQuestItem(q, i, allQuests) {
       </div>`;
   }).join('');
 
+  // Niveau 2 : pas de boutons de notation sur la quête globale dans la
+  // liste Missions. Tout se note champ par champ dans la modale d'édition
+  // (clic Éditer) — c'est plus précis et utilisable par le RAG.
   item.innerHTML = `
-    <div style="display:flex;align-items:flex-start;gap:6px;">
+    <div class="ql-row-title">
       <button class="ql-toggle" title="Voir les choix">▸</button>
-      <div class="ql-text" style="flex:1;">
+      <div class="ql-text">
         <strong>${escapeHtmlAttr(q.title || 'Quête')}</strong>
         <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;">${hasImgs}</div>
         ${noteHtml}
       </div>
-      <span class="rate-btns">
-        <button class="rate-btn good ${q._rating==='good'?'is-on':''}"       data-kind="quest" data-action="good"    title="Bien">★</button>
-        <button class="rate-btn nuanced ${q._rating==='nuanced'?'is-on':''}"  data-kind="quest" data-action="nuanced" title="À nuancer">✦</button>
-        <button class="rate-btn refused ${q._rating==='refused'?'is-on':''}"  data-kind="quest" data-action="refused" title="Refuser">✗</button>
-      </span>
-      <div class="ql-actions" style="margin-left:6px;">
+      <div class="ql-actions">
         <button class="edit">Éditer</button>
         <button class="del">Suppr</button>
       </div>
     </div>
-    <div class="rate-input-row" data-for="question"></div>
     <div class="ql-choices">${choicesRowsHtml}</div>
   `;
   const choicesDiv = item.querySelector('.ql-choices');
   const toggleBtn = item.querySelector('.ql-toggle');
+  if (q._expanded) {
+    choicesDiv.classList.add('shown');
+    toggleBtn.textContent = '▾';
+  }
   toggleBtn.addEventListener('click', () => {
     const shown = choicesDiv.classList.toggle('shown');
     toggleBtn.textContent = shown ? '▾' : '▸';
+    q._expanded = shown;
   });
-  item.querySelectorAll('.rate-btn[data-kind="quest"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      handleRatingClick(item, q, allQuests, 2, 'quest', btn.dataset.action, null);
-    });
-  });
-  // Pas de wire-up des choix N2 : la notation des choix N2 se fait UNIQUEMENT
-  // dans la modale d'édition (quest-modal), où le contexte du cadre est riche.
+  // Pas de wire-up de notation : tout se passe dans la modale Éditer.
   item.querySelector('.edit').addEventListener('click', async () => {
     _returnToMissionsAfterSave = true;
     _missionsLastTab = 'n2';

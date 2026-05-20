@@ -258,16 +258,50 @@ def _fill_prompt(template: str, values: dict) -> str:
     return out
 
 
+def _aggregate_scene_vision_query(scene_id: str) -> str:
+    """Agrège qui/situation/tags de tous les cadres analysés d'une scène.
+    Utilisé pour enrichir la rag_query N1 avec la TYPOLOGIE des clients
+    présents (sinon le matching cosinus retombe sur le seul texte
+    «{name} {category}» qui est très peu discriminant)."""
+    meta_path = SCENES / scene_id / "meta.json"
+    if not meta_path.exists():
+        return ""
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    parts: list[str] = []
+    tags_acc: list[str] = []
+    for b in meta.get("boxes", []) or []:
+        a = b.get("_analysis") or {}
+        for p in (a.get("personnages") or []):
+            if p.get("qui"): parts.append(p["qui"])
+            if p.get("situation"): parts.append(p["situation"])
+        for t in (a.get("tags") or []):
+            if t and t not in tags_acc: tags_acc.append(t)
+        dyn = a.get("dynamique_groupe")
+        if isinstance(dyn, dict):
+            for k in ("interaction", "roles", "atmosphere"):
+                v = dyn.get(k)
+                if v: parts.append(v)
+    if tags_acc:
+        parts.append(" ".join(tags_acc))
+    return " | ".join(parts)
+
+
 def generate_n1_questions(scene_id: str, count: int = 4) -> list[dict]:
     """Génère N questions QCM pour la scène. Renvoie la liste à ajouter
     à `meta.level1_questions`. N'écrit PAS le meta — l'appelant le fait."""
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(1)
-    # Query RAG : on cherche les corrections passées les plus proches du
-    # contexte de la scène (catégorie + liste des cadres présents).
+    # Query RAG enrichie : noms+catégorie + liste des cadres + FACETTES
+    # VISION agrégées (qui/situation/tags/dynamique_groupe) pour matcher
+    # le RAG sur la typologie client réelle de la scène, pas juste le
+    # vocabulaire du nom de module.
+    facets_n1 = _aggregate_scene_vision_query(scene_id)
     rag_query = (
         f"{ctx['name']} {ctx['category']} questions observation "
-        f"{ctx['boxes_text']}"
+        f"{ctx['boxes_text']} | {facets_n1}"
     )
     rag_block = _rag_block_for(rag_query, level=1, k=8)
     prompt_filled = _fill_prompt(prompt_template, {
@@ -318,7 +352,11 @@ def generate_n2_quests(scene_id: str, count: int = 1,
     if per_box:
         count = max(1, ctx["n_boxes"])
     prompt_template = read_prompt(2)
-    rag_query = f"{ctx['name']} {ctx['category']} quête approche {ctx['boxes_text']}"
+    facets_n2 = _aggregate_scene_vision_query(scene_id)
+    rag_query = (
+        f"{ctx['name']} {ctx['category']} quête approche {ctx['boxes_text']} | "
+        f"{facets_n2}"
+    )
     rag_block = _rag_block_for(rag_query, level=2, k=8)
     prompt_filled = _fill_prompt(prompt_template, {
         "scene_context": (
@@ -561,15 +599,23 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
     # Contexte injecté dans le prompt template
     ctx = _scene_context(scene_id)
     prompt_template = read_prompt(2)
-    # RAG : query sémantique = description du cadre + facettes structurées
-    # (niveau social + DISC + code luxe). Cherche les corrections passées
-    # qui parlent de personnages du MÊME TYPE socio-comportemental.
+    # RAG : query sémantique construite depuis le NOUVEAU schéma vision
+    # (qui + situation + tags + dynamique_groupe). Cherche les corrections
+    # passées qui parlent de SITUATIONS CLIENT similaires. Les anciennes
+    # facettes structurées (DISC/social/code-luxe) n'existent plus.
     analysis = target_box.get("_analysis", {})
-    first_perso = (analysis.get("personnages") or [{}])[0]
-    facets_query = " ".join(filter(None, [
-        first_perso.get("niveau_social_estime"),
-        first_perso.get("disc_profile_estime"),
-        first_perso.get("code_luxe_lu"),
+    personnages = analysis.get("personnages") or []
+    qui_agg = " | ".join(p.get("qui", "") for p in personnages if p.get("qui"))
+    situation_agg = " | ".join(p.get("situation", "") for p in personnages if p.get("situation"))
+    tags_join = " ".join(str(t) for t in (analysis.get("tags") or []))
+    dyn = analysis.get("dynamique_groupe") or {}
+    dyn_bits = []
+    if isinstance(dyn, dict):
+        for k in ("interaction", "roles", "atmosphere"):
+            v = dyn.get(k)
+            if v: dyn_bits.append(v)
+    facets_query = " | ".join(filter(None, [
+        qui_agg, situation_agg, tags_join, " ".join(dyn_bits),
     ]))
     rag_query = (
         f"{facets_query} | {target_box.get('subject','')} | {box_descr} | "

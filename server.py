@@ -109,6 +109,41 @@ def _scene_meta(scene_id: str) -> dict | None:
     return _read_json(meta, None)
 
 
+def _aggregate_scene_facets(boxes: list) -> dict:
+    """Agrège les facettes vision (qui / situation / tags / dynamique_groupe)
+    de TOUS les cadres listés. Utilisé pour enrichir les corrections N1/N2
+    avec un contexte client réutilisable côté RAG (au lieu de stocker juste
+    le texte de l'item). Pour les corrections N2 on passe le seul cadre
+    ciblé ; pour N1 on passe toute la scène (la question concerne souvent
+    plusieurs cadres). Renvoie un dict vide si aucune analyse vision."""
+    qui_parts, sit_parts, tags_acc = [], [], []
+    dyn_parts = []
+    if not boxes:
+        return {}
+    for b in boxes:
+        if not isinstance(b, dict):
+            continue
+        a = b.get("_analysis") or {}
+        for p in (a.get("personnages") or []):
+            if p.get("qui"): qui_parts.append(p["qui"])
+            if p.get("situation"): sit_parts.append(p["situation"])
+        for t in (a.get("tags") or []):
+            if t and t not in tags_acc: tags_acc.append(t)
+        dyn = a.get("dynamique_groupe")
+        if isinstance(dyn, dict):
+            dyn_parts.append(dyn)
+    out: dict = {}
+    if qui_parts: out["qui"] = " | ".join(qui_parts)
+    if sit_parts: out["situation"] = " | ".join(sit_parts)
+    if tags_acc:  out["tags"] = tags_acc
+    if len(dyn_parts) == 1:
+        out["dynamique_groupe"] = dyn_parts[0]
+    elif len(dyn_parts) > 1:
+        # Fusion simple : on garde la première (rare cas N1 multi-cadre).
+        out["dynamique_groupe"] = dyn_parts[0]
+    return out
+
+
 def _snapshot_current_scene(name: str, category: str = "") -> dict:
     """Copy the current state of public/ (master, boxes, lineart-svg, exp3) into scenes/<slug>/."""
     slug = _slugify(name)
@@ -1444,14 +1479,19 @@ class Handler(SimpleHTTPRequestHandler):
                 quest_title = (payload.get("quest_title") or "").strip()
                 intro_text = (payload.get("intro_text") or "").strip()
                 # Récupère les facettes structurées du cadre depuis meta.boxes
-                # (_analysis posé par describe_box) pour enrichir le contexte
-                # injecté dans les corrections (DISC + niveau social + code luxe
-                # → matches RAG plus précis sur la dimension client).
+                # (_analysis posé par describe_box). NOUVEAU schéma vision :
+                # personnages[] = {qui, situation}, dynamique_groupe, tags,
+                # resume. Les anciennes clés (DISC, social, code luxe) ont
+                # disparu — on agrège qui/situation de TOUS les personnages.
                 meta_now = _scene_meta(sid) or {}
                 box_obj = next((b for b in meta_now.get("boxes", [])
                                 if str(b.get("id")) == box_id), None)
                 analysis = (box_obj or {}).get("_analysis", {}) if box_obj else {}
-                first_perso = (analysis.get("personnages") or [{}])[0]
+                personnages = analysis.get("personnages") or []
+                qui_agg = " | ".join(p.get("qui", "") for p in personnages if p.get("qui"))
+                situation_agg = " | ".join(p.get("situation", "") for p in personnages if p.get("situation"))
+                tags_list = analysis.get("tags") or []
+                dyn_groupe = analysis.get("dynamique_groupe") or None
                 from pipeline.generate import append_correction  # noqa
                 base_entry = {
                     "scene": sid, "level": 2,
@@ -1460,10 +1500,13 @@ class Handler(SimpleHTTPRequestHandler):
                     "box_description": box_description,
                     "quest_title": quest_title,
                     "intro_text": intro_text,
-                    "niveau_social": first_perso.get("niveau_social_estime", ""),
-                    "disc_profile": first_perso.get("disc_profile_estime", ""),
-                    "code_luxe": first_perso.get("code_luxe_lu", ""),
+                    # Nouveau schéma vision — agrégé pour les cadres multi-perso
+                    "qui": qui_agg,
+                    "situation": situation_agg,
+                    "tags": tags_list if isinstance(tags_list, list) else [],
                 }
+                if dyn_groupe:
+                    base_entry["dynamique_groupe"] = dyn_groupe
                 def _entry(kind, *, content=None, is_best=None, rate_blob=None,
                            choice_idx=None):
                     """Append une entrée correction pour un champ noté. Purge
@@ -1510,31 +1553,40 @@ class Handler(SimpleHTTPRequestHandler):
                     _entry("field_choice_explain",
                            content=c.get("explanation",""), is_best=c.get("is_best"),
                            rate_blob=c.get("explain_rating"), choice_idx=ci)
-                # Met à jour aussi meta avec les _field_ratings pour réafficher
-                # à la prochaine ouverture du modal.
+                # Met à jour meta avec les _field_ratings pour réafficher à
+                # la prochaine ouverture du modal. MERGE (pas overwrite) : le
+                # frontend envoie des payloads single-field (les autres
+                # rate_blob sont null), donc on doit préserver les ratings
+                # déjà posés sur la quête + les choix. Bug #2 fixé.
+                # Bug #3 fixé : `payload.get("x", {})` retourne {} SEULEMENT
+                # si la clé absente. Or le frontend envoie x=null → .get
+                # retourne None → .get("rating") plantait. On utilise
+                # `(payload.get("x") or {}).get("rating")` pour absorber null.
                 meta = _scene_meta(sid) or {}
                 target = next((x for x in meta.get("quests", []) if x.get("id") == item_id), None)
                 if target:
-                    fr = {}
-                    if payload.get("title_rating", {}).get("rating"):
-                        fr["title"] = {"rating": payload["title_rating"]["rating"],
-                                       "note": payload["title_rating"].get("note")}
-                    if payload.get("intro_rating", {}).get("rating"):
-                        fr["intro"] = {"rating": payload["intro_rating"]["rating"],
-                                       "note": payload["intro_rating"].get("note")}
-                    if fr: target["_field_ratings"] = fr
+                    fr = dict(target.get("_field_ratings") or {})  # merge, pas overwrite
+                    tr = payload.get("title_rating") or {}
+                    if tr.get("rating"):
+                        fr["title"] = {"rating": tr["rating"], "note": tr.get("note")}
+                    ir = payload.get("intro_rating") or {}
+                    if ir.get("rating"):
+                        fr["intro"] = {"rating": ir["rating"], "note": ir.get("note")}
+                    target["_field_ratings"] = fr
                     target_choices = target.get("dialogue_choices", [])
                     for c in (payload.get("choices") or []):
                         idx = c.get("idx")
                         if not isinstance(idx, int) or not (0 <= idx < len(target_choices)):
                             continue
-                        cfr = {}
-                        if c.get("text_rating", {}).get("rating"):
-                            cfr["text"] = {"rating": c["text_rating"]["rating"],
-                                           "note": c["text_rating"].get("note")}
-                        if c.get("explain_rating", {}).get("rating"):
-                            cfr["explanation"] = {"rating": c["explain_rating"]["rating"],
-                                                  "note": c["explain_rating"].get("note")}
+                        # Merge des ratings du choix : préserver text si
+                        # seul explanation est noté (et inversement).
+                        cfr = dict(target_choices[idx].get("_field_ratings") or {})
+                        tr_c = c.get("text_rating") or {}
+                        if tr_c.get("rating"):
+                            cfr["text"] = {"rating": tr_c["rating"], "note": tr_c.get("note")}
+                        er_c = c.get("explain_rating") or {}
+                        if er_c.get("rating"):
+                            cfr["explanation"] = {"rating": er_c["rating"], "note": er_c.get("note")}
                         if cfr:
                             target_choices[idx]["_field_ratings"] = cfr
                     meta["updated_at"] = _now_iso()
@@ -1574,6 +1626,27 @@ class Handler(SimpleHTTPRequestHandler):
                     else "quest" if (kind == "quest" and level == 2)
                     else kind
                 )
+                # ENRICHISSEMENT du contexte (bug #4) : on agrège qui/situation
+                # /tags/dynamique_groupe de TOUS les cadres de la scène pour
+                # les entrées N1 (les questions concernent souvent plusieurs
+                # cadres), ou du cadre ciblé pour N2. Permet au RAG de
+                # matcher la TYPOLOGIE des clients plutôt que de se baser
+                # uniquement sur le texte de l'item.
+                scene_name = meta.get("name", sid)
+                scene_category = meta.get("category", "")
+                all_boxes = meta.get("boxes", []) or []
+                scene_facets = _aggregate_scene_facets(all_boxes)
+                if level == 2:
+                    # Pour N2, le ciblage est précis : le cadre de la quête.
+                    target_box_obj = next(
+                        (b for b in all_boxes if str(b.get("id")) == str(target.get("box_id"))),
+                        None,
+                    )
+                    box_facets = _aggregate_scene_facets([target_box_obj] if target_box_obj else [])
+                    ctx_extra = box_facets or scene_facets
+                else:
+                    ctx_extra = scene_facets
+
                 if kind in ("question", "quest"):
                     target["_rating"] = rating
                     target["_note"] = note or None
@@ -1581,10 +1654,13 @@ class Handler(SimpleHTTPRequestHandler):
                     entry = {
                         "date": _now_iso(),
                         "scene": sid,
+                        "scene_name": scene_name,
+                        "scene_category": scene_category,
                         "level": level,
                         "kind": entry_kind,
                         "rating": rating,
                         "item_id": item_id,
+                        **ctx_extra,  # qui, situation, tags, dynamique_groupe
                     }
                     if level == 1:
                         entry["question"] = target.get("text")
@@ -1622,11 +1698,13 @@ class Handler(SimpleHTTPRequestHandler):
                         is_correct = (answer_idx == ci)
                         entry = {
                             "date": _now_iso(), "scene": sid, "level": 1,
+                            "scene_name": scene_name, "scene_category": scene_category,
                             "kind": "answer", "rating": rating,
                             "item_id": item_id, "answer_idx": answer_idx,
                             "parent_question": target.get("text"),
                             "answer": choices[answer_idx],
                             "is_correct_in_qcm": is_correct,
+                            **ctx_extra,
                         }
                     else:
                         choices = target.get("dialogue_choices", [])
@@ -1637,11 +1715,13 @@ class Handler(SimpleHTTPRequestHandler):
                         c["_note"] = note or None
                         entry = {
                             "date": _now_iso(), "scene": sid, "level": 2,
+                            "scene_name": scene_name, "scene_category": scene_category,
                             "kind": "answer", "rating": rating,
                             "item_id": item_id, "answer_idx": answer_idx,
                             "parent_quest": target.get("title"),
                             "answer": c.get("text"),
                             "is_best": bool(c.get("is_best")),
+                            **ctx_extra,
                         }
                     if note:
                         entry["note"] = note
@@ -1654,10 +1734,12 @@ class Handler(SimpleHTTPRequestHandler):
                     target["_explanation_rating"] = {"rating": rating, "note": note or None}
                     entry = {
                         "date": _now_iso(), "scene": sid, "level": level,
+                        "scene_name": scene_name, "scene_category": scene_category,
                         "kind": "explanation", "rating": rating,
                         "item_id": item_id,
                         "parent_question": target.get("text"),
                         "explanation": target.get("explanation"),
+                        **ctx_extra,
                     }
                     if note:
                         entry["note"] = note

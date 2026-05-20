@@ -352,31 +352,57 @@
     display: none;
     z-index: 12;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-    /* Scrollbar custom Firefox : finesse + couleur or velours sur fond noir */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(212, 184, 122, 0.40) rgba(0, 0, 0, 0.20);
   }
   body.state-editor #box-panel.shown { display: block; }
 
-  /* Scrollbar custom WebKit (Chrome / Edge / Safari) du box-panel — discrète,
-     assortie à la palette « Velours Théâtre » (or sur fond sombre). Au survol,
-     le pouce s'éclaire pour signaler l'interactivité. */
-  #box-panel::-webkit-scrollbar { width: 8px; }
-  #box-panel::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.20);
-    border-radius: 0 10px 10px 0;
+  /* ─── Scrollbar custom « Velours Théâtre » — appliquée GLOBALEMENT ───
+     Track noir transparent + pouce dégradé or velours. Hover et active
+     éclairés pour feedback. Vertical + horizontal. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(212, 184, 122, 0.40) rgba(0, 0, 0, 0.20);
   }
-  #box-panel::-webkit-scrollbar-thumb {
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.20);
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, rgba(212, 184, 122, 0.45), rgba(140, 110, 60, 0.40));
     border-radius: 4px;
     border: 1px solid rgba(0, 0, 0, 0.25);
   }
-  #box-panel::-webkit-scrollbar-thumb:hover {
+  *::-webkit-scrollbar-thumb:hover {
     background: linear-gradient(180deg, rgba(232, 210, 160, 0.70), rgba(180, 150, 90, 0.60));
   }
-  #box-panel::-webkit-scrollbar-thumb:active {
+  *::-webkit-scrollbar-thumb:active {
     background: linear-gradient(180deg, rgba(255, 230, 180, 0.85), rgba(200, 170, 110, 0.75));
   }
+  *::-webkit-scrollbar-corner { background: rgba(0, 0, 0, 0.20); }
+
+  /* ─── × de fermeture en haut à droite des modales ──────────────────
+     Remplace les gros boutons « Fermer » / « Annuler » du bas (quand
+     ces boutons ne faisaient que fermer la modale). */
+  .modal { position: relative; }
+  .modal-close-x {
+    position: absolute; top: 12px; right: 14px;
+    background: transparent; border: 0; color: rgba(255,255,255,0.5);
+    cursor: pointer; font-size: 26px; line-height: 1;
+    padding: 4px 10px;
+    border-radius: 6px;
+    min-width: 36px; min-height: 36px;
+    z-index: 2;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .modal-close-x:hover {
+    color: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.06);
+  }
+  .modal-close-x:focus-visible {
+    outline: 2px solid rgba(212,184,122,0.6); outline-offset: 2px;
+  }
+  /* Réserve la place au titre H3 pour ne pas qu'il passe sous le × */
+  .modal h3 { padding-right: 42px; }
 
   .box-panel-header {
     display: flex; align-items: center; justify-content: space-between;
@@ -1726,6 +1752,7 @@
 <!-- ----- Modal: edit observation question ----- -->
 <div id="question-modal" class="modal-overlay">
   <div class="modal">
+    <button class="modal-close-x" id="q-cancel" type="button" aria-label="Fermer">×</button>
     <h3>Question d'observation</h3>
     <div class="field">
       <div class="field-row"><span class="field-label">Énoncé</span></div>
@@ -1741,8 +1768,7 @@
       <textarea id="q-explanation" placeholder="ex: La scène montre 5 clients : un couple, une dame aux cheveux blancs..." style="min-height:60px;"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn" id="q-cancel">Annuler</button>
-      <button class="btn primary" id="q-save">Sauver</button>
+      <button class="btn primary" id="q-save" style="flex:1;">Sauver</button>
     </div>
   </div>
 </div>
@@ -1785,6 +1811,7 @@
 <!-- ----- Modal Missions : sous-onglets N1 (observations) et N2 (quêtes) ----- -->
 <div id="missions-modal" class="modal-overlay">
   <div class="modal">
+    <button class="modal-close-x" id="missions-close" type="button" aria-label="Fermer">×</button>
     <h3>Missions du module</h3>
     <!-- Sous-onglets : N1 — Observations / N2 — Quêtes -->
     <div class="missions-tabs" id="missions-tabs">
@@ -1819,10 +1846,6 @@
         <button class="btn" id="quests-list-add">+ Nouvelle quête</button>
       </div>
     </div>
-    <!-- Bouton Fermer commun aux 2 sous-onglets -->
-    <div class="modal-actions" style="margin-top:12px;">
-      <button class="btn primary" id="missions-close" style="flex:1;">Fermer</button>
-    </div>
   </div>
 </div>
 <!-- Boutons ghosts pour préserver les listeners legacy (ql-close / quests-list-close) -->
@@ -1832,6 +1855,7 @@
 <!-- ----- Modal Historique : 10 derniers snapshots auto du module ----- -->
 <div id="history-modal" class="modal-overlay">
   <div class="modal">
+    <button class="modal-close-x" id="history-close" type="button" aria-label="Fermer">×</button>
     <h3>Historique des modifications</h3>
     <p class="sounds-intro">
       Chaque modification d'image (Personnages, Tracé, Cadres) prend un
@@ -1839,15 +1863,13 @@
       Clique sur « Restaurer » pour revenir à cet état.
     </p>
     <div id="history-list" style="max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;"></div>
-    <div class="modal-actions" style="margin-top:14px;">
-      <button class="btn primary" id="history-close" style="flex:1;">Fermer</button>
-    </div>
   </div>
 </div>
 
 <!-- ----- Modal Sons : pour chaque événement du jeu, 10 alternatives ----- -->
 <div id="sounds-modal" class="modal-overlay">
   <div class="modal sounds-modal-inner">
+    <button class="modal-close-x" id="sounds-close" type="button" aria-label="Fermer">×</button>
     <h3>Sons du module</h3>
     <p class="sounds-intro">
       Pour chaque événement, choisis une ambiance sonore parmi les 10 alternatives.
@@ -1860,15 +1882,13 @@
     </label>
     <!-- Liste d'événements remplie par app.js / sfx.js -->
     <div id="sounds-events-list"></div>
-    <div class="modal-actions" style="margin-top:14px;">
-      <button class="btn primary" id="sounds-close" style="flex:1;">Fermer</button>
-    </div>
   </div>
 </div>
 
 <!-- ----- Modal: choisir quels cadres décrire (vision) ----- -->
 <div id="describe-modal" class="modal-overlay">
   <div class="modal">
+    <button class="modal-close-x" id="desc-cancel" type="button" aria-label="Fermer">×</button>
     <h3>👁 Analyser les cadres (vision)</h3>
     <p style="color:rgba(255,255,255,0.65);margin:6px 0 14px 0;line-height:1.45;">
       Sélectionne les cadres à analyser. GPT-5.4 regardera l'image de chaque
@@ -1888,8 +1908,7 @@
       Forcer la régénération même si une analyse existe déjà
     </label>
     <div class="modal-actions" style="display:flex;gap:8px;margin-top:16px;">
-      <button class="btn" id="desc-cancel" style="flex:1;" type="button">Annuler</button>
-      <button class="btn primary" id="desc-launch" style="flex:2;" type="button">Lancer l'analyse</button>
+      <button class="btn primary" id="desc-launch" style="flex:1;" type="button">Lancer l'analyse</button>
     </div>
   </div>
 </div>
@@ -1897,6 +1916,7 @@
 <!-- ----- Modal: edit quest ----- -->
 <div id="quest-modal" class="modal-overlay">
   <div class="modal">
+    <button class="modal-close-x" id="qu-cancel" type="button" aria-label="Fermer">×</button>
     <h3>Quête (niveau 2)</h3>
     <div class="field">
       <div class="field-row"><span class="field-label">Cadre associé</span></div>
@@ -1949,8 +1969,7 @@
       <button class="btn" id="qu-add-choice" style="margin-top:8px;">+ Choix</button>
     </div>
     <div class="modal-actions">
-      <button class="btn" id="qu-cancel">Annuler</button>
-      <button class="btn primary" id="qu-save">Sauver</button>
+      <button class="btn primary" id="qu-save" style="flex:1;">Sauver</button>
     </div>
   </div>
 </div>

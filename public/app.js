@@ -949,6 +949,7 @@ $('delete-box').addEventListener('click', () => {
 });
 
 // Regenerate the selected box's per-asset images (zoom 1 / zoom 2 / dessin)
+// + optionally re-run vision analysis on this single box.
 $('regen-box').addEventListener('click', async () => {
   if (!state.selectedBoxId) { alert('Sélectionne un cadre.'); return; }
   const opts = {
@@ -956,7 +957,8 @@ $('regen-box').addEventListener('click', async () => {
     imageC: $('regen-imageC').checked,
     dessin: $('regen-dessin').checked,
   };
-  if (!opts.imageB && !opts.imageC && !opts.dessin) {
+  const wantVision = $('regen-vision')?.checked;
+  if (!opts.imageB && !opts.imageC && !opts.dessin && !wantVision) {
     alert('Coche au moins une option à régénérer.');
     return;
   }
@@ -964,19 +966,55 @@ $('regen-box').addEventListener('click', async () => {
   if (!box) return;
   // Save current edits to box (subject/aspect/x/y/w/h) before regenerating.
   await saveBoxes();
-  showOverlay({ step: `Régénération du cadre ${box.id}…`, step_index: 0, total_steps: 1 });
+
+  // Cas 1 : actions images (imageB/imageC/dessin) → endpoint regen-box.
+  if (opts.imageB || opts.imageC || opts.dessin) {
+    showOverlay({ step: `Régénération du cadre ${box.id}…`, step_index: 0, total_steps: 1 });
+    try {
+      const r = await fetch('/api/regen-box', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ box, opts, scene_id: sceneState.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setOverlayError(j.error || `HTTP ${r.status}`); return; }
+      // Quand on a aussi vision : on attend la fin du regen-box AVANT
+      // d'enchaîner avec describe-boxes (le serveur a un mutex _running).
+      if (wantVision) {
+        await pollUntilDone({ reloadAfter: false });
+        await _runVisionOnBoxes([String(box.id)], false);
+      } else {
+        pollUntilDone({ reloadAfter: false });
+      }
+    } catch (err) {
+      setOverlayError(err.message);
+    }
+    return;
+  }
+
+  // Cas 2 : vision uniquement (pas d'images sélectionnées) → describe-boxes direct.
+  showGptOverlay('Analyse vision du cadre…');
   try {
-    const r = await fetch('/api/regen-box', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ box, opts, scene_id: sceneState.id }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { setOverlayError(j.error || `HTTP ${r.status}`); return; }
-    pollUntilDone({ reloadAfter: false });
-  } catch (err) {
-    setOverlayError(err.message);
+    await _runVisionOnBoxes([String(box.id)], false);
+  } finally {
+    hideGptOverlay();
   }
 });
+
+// Helper interne : POST /api/describe-boxes en mode sélectif.
+// Renvoie le rapport (utile pour les loggers). Rafraîchit le meta côté front
+// pour que la Fiche client se mette à jour immédiatement.
+async function _runVisionOnBoxes(boxIds, force) {
+  const r = await fetch('/api/describe-boxes', {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({
+      scene_ids: [sceneState.id], box_ids: boxIds, force: !!force,
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { alert('Vision échouée : ' + (j.error || 'HTTP ' + r.status)); return j; }
+  await loadCurrentSceneMeta();  // rafraîchit la fiche client
+  return j;
+}
 
 $('exit-editor').addEventListener('click', () => exitEditor(true));
 $('generate-from-editor').addEventListener('click', async () => {
@@ -3171,24 +3209,28 @@ $('gen-n2')?.addEventListener('click', () => doGenerate(2));
 $('refine-n1')?.addEventListener('click', () => doRefinePrompt(1));
 $('refine-n2')?.addEventListener('click', () => doRefinePrompt(2));
 
-// ─── Modale « Analyser les cadres » : choix multi-cadres ────────────
-function openDescribeModal() {
+// ─── Modale « Régénérer pour tous les cadres » ──────────────────────
+// Permet de relancer en lot N'IMPORTE QUELLE combinaison d'actions
+// (image zoom 1, image zoom 2, dessin, analyse vision) sur le ou les
+// cadres choisis. Le serveur a un mutex _running, donc l'exécution est
+// SÉQUENTIELLE côté client : on attend chaque cadre avant le suivant.
+function openRegenAllModal() {
   if (!sceneState.id) { alert('Sauve d\'abord la scène comme module.'); return; }
   const boxes = sceneState.meta?.boxes || [];
   if (!boxes.length) { alert('Aucun cadre dans cette scène.'); return; }
-  const list = $('desc-boxes-list');
+  const list = $('ra-boxes-list');
   list.innerHTML = '';
   for (const b of boxes) {
     const bid = String(b.id);
     const hasAnalysis = !!(b._analysis && (b._analysis.personnages?.length || b._description));
     const subj = (b.subject || '').trim() || '(sans sujet)';
     const status = hasAnalysis
-      ? '<span style="color:rgba(80,227,164,0.85);font-size:11px;">✓ analysé</span>'
-      : '<span style="color:rgba(255,184,77,0.85);font-size:11px;">⚠ pas d\'analyse</span>';
+      ? '<span style="color:rgba(80,227,164,0.85);font-size:11px;">👁 ✓ analysé</span>'
+      : '<span style="color:rgba(255,184,77,0.85);font-size:11px;">👁 ⚠ pas d\'analyse</span>';
     const row = document.createElement('label');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;';
     row.innerHTML = `
-      <input type="checkbox" class="desc-box-cb" data-bid="${escapeHtmlAttr(bid)}" data-has="${hasAnalysis ? '1' : '0'}" ${hasAnalysis ? '' : 'checked'}>
+      <input type="checkbox" class="ra-box-cb" data-bid="${escapeHtmlAttr(bid)}" data-has-vision="${hasAnalysis ? '1' : '0'}" checked>
       <span style="flex:1;font-size:13px;">
         <strong style="color:rgba(212,184,122,0.95);">Cadre ${escapeHtmlAttr(bid)}</strong>
         · <span style="color:rgba(255,255,255,0.85);">${escapeHtmlAttr(subj)}</span>
@@ -3197,57 +3239,91 @@ function openDescribeModal() {
     `;
     list.appendChild(row);
   }
-  $('desc-force').checked = false;
-  $('describe-modal').classList.add('shown');
+  $('ra-force-vision').checked = false;
+  $('regen-all-modal').classList.add('shown');
 }
-function closeDescribeModal() {
-  $('describe-modal').classList.remove('shown');
+function closeRegenAllModal() {
+  $('regen-all-modal').classList.remove('shown');
 }
-function _descCheckboxes() {
-  return Array.from(document.querySelectorAll('#desc-boxes-list .desc-box-cb'));
+function _raCheckboxes() {
+  return Array.from(document.querySelectorAll('#ra-boxes-list .ra-box-cb'));
 }
-$('desc-all')?.addEventListener('click', () => {
-  _descCheckboxes().forEach(cb => { cb.checked = true; });
+$('ra-all')?.addEventListener('click', () => {
+  _raCheckboxes().forEach(cb => { cb.checked = true; });
 });
-$('desc-none')?.addEventListener('click', () => {
-  _descCheckboxes().forEach(cb => { cb.checked = false; });
+$('ra-none')?.addEventListener('click', () => {
+  _raCheckboxes().forEach(cb => { cb.checked = false; });
 });
-$('desc-missing')?.addEventListener('click', () => {
-  _descCheckboxes().forEach(cb => { cb.checked = cb.dataset.has !== '1'; });
+$('ra-missing-vision')?.addEventListener('click', () => {
+  _raCheckboxes().forEach(cb => { cb.checked = cb.dataset.hasVision !== '1'; });
 });
-$('desc-cancel')?.addEventListener('click', closeDescribeModal);
-$('describe-modal')?.addEventListener('click', (e) => {
-  if (e.target === $('describe-modal')) closeDescribeModal();
+$('regen-all-cancel')?.addEventListener('click', closeRegenAllModal);
+$('regen-all-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('regen-all-modal')) closeRegenAllModal();
 });
 
-$('desc-launch')?.addEventListener('click', async () => {
-  const selected = _descCheckboxes().filter(cb => cb.checked).map(cb => cb.dataset.bid);
+$('ra-launch')?.addEventListener('click', async () => {
+  const selected = _raCheckboxes().filter(cb => cb.checked).map(cb => cb.dataset.bid);
   if (!selected.length) { alert('Coche au moins un cadre.'); return; }
-  const force = $('desc-force').checked;
-  closeDescribeModal();
-  showGptOverlay(`Vision en cours sur ${selected.length} cadre(s)…`);
-  try {
-    const r = await fetch('/api/describe-boxes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({
-        scene_ids: [sceneState.id], box_ids: selected, force,
-      }),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-    const rep = j.report?.[sceneState.id] || {};
-    const lines = Object.entries(rep).map(([bid, d]) =>
-      `· Cadre ${bid} : ${String(d).slice(0, 100)}…`).join('\n');
-    alert(`✓ ${Object.keys(rep).length} cadre(s) analysé(s)\n\n${lines || '(aucun cadre)'}`);
-    await loadCurrentSceneMeta();  // rafraîchit la fiche client
-  } catch (e) {
-    alert('Échec : ' + e.message);
-  } finally {
-    hideGptOverlay();
+  const opts = {
+    imageB: $('ra-imageB').checked,
+    imageC: $('ra-imageC').checked,
+    dessin: $('ra-dessin').checked,
+  };
+  const wantVision = $('ra-vision').checked;
+  if (!opts.imageB && !opts.imageC && !opts.dessin && !wantVision) {
+    alert('Coche au moins une action à régénérer.');
+    return;
   }
+  const force = $('ra-force-vision').checked;
+  closeRegenAllModal();
+
+  // Map id → box pour les appels /api/regen-box (qui exige le payload box)
+  const boxById = Object.fromEntries(
+    (sceneState.meta?.boxes || []).map(b => [String(b.id), b])
+  );
+
+  const wantImageOps = opts.imageB || opts.imageC || opts.dessin;
+  let done = 0, errors = [];
+  for (const bid of selected) {
+    done++;
+    const box = boxById[bid];
+    if (!box) { errors.push(`cadre ${bid} introuvable`); continue; }
+    // 1. Actions images via regen-box (séquentiel, attend la fin)
+    if (wantImageOps) {
+      showOverlay({
+        step: `Cadre ${bid} (${done}/${selected.length}) — régénération images…`,
+        step_index: done - 1, total_steps: selected.length,
+      });
+      try {
+        const r = await fetch('/api/regen-box', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ box, opts, scene_id: sceneState.id }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { errors.push(`cadre ${bid} (images) : ${j.error || 'HTTP ' + r.status}`); }
+        else { await pollUntilDone({ reloadAfter: false }); }
+      } catch (e) {
+        errors.push(`cadre ${bid} (images) : ${e.message}`);
+      }
+    }
+    // 2. Vision via describe-boxes (toujours séquentiel après les images)
+    if (wantVision) {
+      showGptOverlay(`Cadre ${bid} (${done}/${selected.length}) — analyse vision…`);
+      try {
+        await _runVisionOnBoxes([String(bid)], force);
+      } catch (e) {
+        errors.push(`cadre ${bid} (vision) : ${e.message}`);
+      } finally {
+        hideGptOverlay();
+      }
+    }
+  }
+  if (errors.length) alert(`Terminé avec ${errors.length} erreur(s) :\n\n${errors.join('\n')}`);
+  else alert(`✓ ${selected.length} cadre(s) régénéré(s).`);
 });
 
-$('describe-boxes')?.addEventListener('click', openDescribeModal);
+$('regen-all-boxes')?.addEventListener('click', openRegenAllModal);
 
 $('bootstrap-corpus')?.addEventListener('click', async () => {
   if (!confirm(

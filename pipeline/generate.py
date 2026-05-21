@@ -689,7 +689,27 @@ def generate_one_quest_for_box(scene_id: str, box_id: str) -> dict:
 
 def _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block):
     is_best = bool(choice.get("is_best"))
-    role = "MEILLEURE ACCROCHE (best)" if is_best else "DISTRACTEUR (alternatif)"
+    role = "MEILLEURE ACCROCHE (is_best=true)" if is_best else "DISTRACTEUR (is_best=false)"
+    if is_best:
+        directive = (
+            "1ère phrase = VALIDATION DIRECTE courte (ex: « Question "
+            "parfaitement calibrée pour la découverte. », « Compliment "
+            "subtil parfaitement ancré sur le détail observé. »). "
+            "Suite = ce qui FONCTIONNE dans le mécanisme + pourquoi c'est "
+            "puissant sur ce profil client précis. INTERDIT : conseiller, "
+            "nuancer, mentionner un mauvais comportement qu'il n'a PAS eu."
+        )
+    else:
+        directive = (
+            "1ère phrase = « le bon réflexe » en règle énoncée ou impératif "
+            "court (ex: « Sondez l'envie avant de parler vitrine. », "
+            "« Évitez le choix binaire en début de découverte. »). "
+            "Suite = articulée en « Plutôt que [défaut concret du choix], "
+            "pensez à [action recommandée] — [bénéfice métier en clôture] ». "
+            "Le tiret cadratin « — » sert d'articulation entre le conseil "
+            "et le bénéfice. Si HYPOTHÈSE non vérifiée → pointe-la. Si "
+            "INTRUSIF (vie privée/perso) → signale-le dans l'accroche."
+        )
     return (
         f"CADRE / CONTEXTE :\n{ctx_label}\n\n"
         f"QUÊTE — titre : {quest.get('title','')}\n"
@@ -698,10 +718,12 @@ def _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block):
         f"« {choice.get('text','')} »\n\n"
         f"MÉMOIRE RAG (explications passées validées sur situations similaires) :\n"
         f"{rag_block}\n\n"
-        f"Tâche : produis l'EXPLICATION pédagogique de ce choix pour le joueur. "
-        f"Une seule phrase (< 60 mots), ton coach, qui dit POURQUOI ce choix "
-        f"{'est la meilleure accroche' if is_best else 'paraît plausible mais rate'} "
-        f"et finit par le PRINCIPE pédagogique. Réponds en JSON : "
+        f"Tâche : produis l'EXPLICATION pédagogique. UN SEUL PARAGRAPHE en "
+        f"STRING (pas d'objet à sous-champs), 200-280 caractères (max 320), "
+        f"une seule ligne sans retour à la ligne. {directive} "
+        f"Vouvoiement sobre, jamais de « tu ». PAS de markdown, PAS de HTML, "
+        f"PAS de jargon de coach. PAS de jugement personnel sur le vendeur. "
+        f"Réponds en JSON : "
         '{"explanation": "..."}'
     )
 
@@ -742,11 +764,17 @@ def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
     )
 
     sys_msg = (
-        "Tu es expert en formation vente luxe (Robin Lent). Tu produis l'EXPLICATION "
-        "pédagogique d'un choix de dialogue. Ton coach, didactique, jamais commercial. "
-        "Une seule phrase compacte (< 60 mots). PAS d'introduction (« Cette réponse… ») — "
-        "va droit au principe. Inspire-toi du ton/structure des exemples ★ "
-        "du RAG, évite les patterns des ✗/✦."
+        "Tu es coach commercial expert pour vendeurs en boutique luxe / premium "
+        "(Robin Lent). Tu rédiges une EXPLICATION qui sera affichée au joueur "
+        "après son choix. Structure imposée : UN SEUL PARAGRAPHE en STRING, "
+        "200-280 caractères (max 320), une seule ligne. La 1ère phrase est "
+        "courte et autonome — côté player elle est rendue automatiquement en "
+        "gras (le moteur coupe sur `. ! ? …`), donc PAS de markdown ni de "
+        "HTML dans le texte. Vouvoiement sobre. PAS de « tu ». PAS de jargon "
+        "de coach (« donne un cap », « partez de l'élan »…). PAS de jugement "
+        "personnel (« votre erreur »). On parle du CHOIX, pas du vendeur. "
+        "Inspire-toi du TON et de la STRUCTURE des exemples ★ du RAG, évite "
+        "explicitement les patterns des ✗ / ✦."
     )
     user_msg = _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block)
     j = chat_json(

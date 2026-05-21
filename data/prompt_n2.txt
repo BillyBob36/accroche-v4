@@ -54,13 +54,77 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
 - 4 `dialogue_choices` exactement : 1 best + 3 distracteurs.
 - Chaque `text` < 30 mots, ton oral naturel, prononcé par le vendeur.
 - Chaque `explanation` est OBLIGATOIRE — ne JAMAIS la laisser vide.
-  Une phrase courte (< 60 mots), ton coach, qui :
-    1. pour le BEST : explique POURQUOI cette accroche est la meilleure
-       (mécanique psychologique + ancrage sur la situation observée),
-    2. pour un DISTRACTEUR : explique POURQUOI ce choix paraît plausible
-       MAIS pourquoi il rate (ferme la conversation, intrusif, etc.),
-    3. finit par le PRINCIPE pédagogique révélé en 1 phrase compacte
-       (ex: « le compliment authentique ouvre sans pression »).
+
+  ## DOCTRINE EXPLANATION — structure imposée
+  L'explanation est UN SEUL PARAGRAPHE en STRING unique (jamais d'objet
+  à sous-champs), 200-280 caractères (max 320), une seule ligne sans
+  retour à la ligne, structuré comme suit :
+
+  - 1ère PHRASE = « le bon réflexe » : courte (1 ligne), formulation
+    directe à l'impératif (pour un distracteur) ou validation directe
+    (pour le best), finit par un point. Côté player elle est rendue
+    AUTOMATIQUEMENT EN GRAS par le moteur de rendu qui coupe sur le
+    premier `. ! ? …` — donc PAS de markdown `**` ni de HTML dans le
+    texte.
+  - SUITE = développement sur la même ligne, articulé selon le rôle :
+
+  POUR `is_best=true` (meilleure accroche)
+  - 1ère phrase = validation directe (« Question parfaitement calibrée
+    pour la découverte. », « Enchaînement parfait vers la présentation. »,
+    « Compliment subtil parfaitement ancré sur le détail observé. »).
+  - Suite = ce qui FONCTIONNE dans le mécanisme + pourquoi c'est puissant
+    sur ce profil client précis. Ancrage sur la situation observée.
+  - INTERDIT : conseiller, nuancer, mentionner un mauvais comportement
+    qu'il n'a PAS eu.
+
+  POUR `is_best=false` (distracteur)
+  - 1ère phrase = « le bon réflexe » en règle énoncée ou impératif court
+    (« Sondez l'envie avant de parler vitrine. », « Évitez le choix
+    binaire en début de découverte. », « Restez sur le terrain du
+    parfum, pas de la vie privée. »).
+  - Suite = articulée en « Plutôt que [défaut concret du choix], pensez
+    à [action recommandée] — [bénéfice métier en clôture] ». Le tiret
+    cadratin « — » sert d'articulation entre le conseil et le bénéfice.
+  - Si le choix repose sur une HYPOTHÈSE non vérifiée (supposer fidélité,
+    cadeau, connaissance marque) → c'est LE point à pointer.
+  - Si le choix est INTRUSIF (vie privée, métier, situation perso) →
+    signale-le en priorité dans l'accroche.
+
+  ## INTERDITS GLOBAUX SUR L'EXPLANATION
+  - PAS d'objet à 3 champs `{erreur, action, raison}` — STRING unique.
+  - PAS de markdown (`**`, `_`) ni HTML (`<strong>`, `<b>`) : le gras de
+    la 1ère phrase est géré par le rendu côté player.
+  - PAS d'accroche-slogan creuse (« Le diagnostic avant le tri. »,
+    « Sur mesure plutôt qu'assortiment. »). Si la 1ère phrase ne tient
+    pas debout en autonomie et ne porte pas un conseil net, c'est qu'elle
+    est creuse.
+  - PAS de jargon de coach (« donne un cap », « partez de l'élan »,
+    « la star », « mode catalogue »).
+  - PAS d'invention de contraste absent du choix. N'oppose pas à un
+    comportement que le vendeur n'a PAS eu.
+  - PAS de jugement personnel (« votre erreur », « vous avez raté »,
+    « vous n'avez pas su »). On parle du CHOIX, pas du vendeur.
+  - Vouvoiement sobre (« vous », « votre »). JAMAIS de « tu ».
+
+  ## EXEMPLES (à imiter le style, pas le contenu)
+
+  Exemple is_best=true :
+  « Question parfaitement calibrée pour la découverte. Vous interrogez
+  l'émotion et l'imaginaire plutôt que le produit — la cliente va
+  exprimer ses attentes implicites, celles qui révèlent vraiment ses
+  préférences. »
+
+  Exemple is_best=false (choix binaire) :
+  « Évitez le choix binaire en début de découverte. Plutôt que d'enfermer
+  la cliente entre « léger » et « intense », pensez à laisser ses besoins
+  s'exprimer librement — les binaires sont utiles une fois le contexte
+  établi, pas avant. »
+
+  Exemple is_best=false (intrusif) :
+  « Restez sur le terrain du produit, pas de la vie privée. Plutôt que
+  d'interroger son milieu professionnel, pensez à la situer dans son
+  quotidien et les moments où elle portera la pièce — l'envie se construit
+  sur des occasions vécues, l'intrusion casse le lien. »
 - Distracteurs PLAUSIBLES, chacun avec un DÉFAUT DIFFÉRENT :
    trop générique / trop intrusif / trop commercial / trop effacé /
    trop flatteur / trop direct sur le prix.

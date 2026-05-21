@@ -773,6 +773,16 @@
     font-size: 20px; line-height: 1.55;
     color: var(--fg);
   }
+  /* 1ère phrase de l'explanation rendue en gras (« le bon réflexe ») —
+     pop-up didactique alignée sur la doctrine tips. La règle agit aussi
+     pour qcm-explain (N1 observation). */
+  .feedback-card .explain strong,
+  .qcm-explain strong {
+    font-style: normal;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.005em;
+  }
   /* Bouton Continuer après feedback : style primaire VButton (gold gradient,
      full=false, h54 fs15) */
   .dialogue-close {

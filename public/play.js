@@ -601,7 +601,10 @@ function showQuestion() {
       if (good) game.score++;
       sfx(good ? 'validate_good' : 'validate_bad');
       const exp = $('qcm-explain');
-      exp.textContent = q.explanation || (good ? 'Bonne réponse.' : 'Réponse incorrecte.');
+      // Boldifie la 1ère phrase via la même règle que les feedback-cards N2.
+      exp.innerHTML = _boldifyFirstSentence(
+        q.explanation || (good ? 'Bonne réponse.' : 'Réponse incorrecte.')
+      );
       exp.classList.add('shown');
       $('qcm-next').classList.add('shown');
     });
@@ -1035,13 +1038,26 @@ function onDialoguePick(q, origIdx) {
   $('dialogue-close').classList.add('shown');
 }
 
+// Boldifie la 1ère phrase d'une explication (« le bon réflexe ») —
+// le moteur coupe au premier `. ! ? …`. Le reste est échappé proprement.
+// Doctrine Metagora tips : 1ère phrase = règle énoncée / validation directe,
+// rendue automatiquement en gras côté player.
+function _boldifyFirstSentence(text) {
+  if (!text) return '';
+  const m = String(text).match(/^([^.!?…]*[.!?…])\s*([\s\S]*)$/);
+  if (!m) return escapeHtml(text);
+  const first = m[1];
+  const rest = m[2] || '';
+  return '<strong>' + escapeHtml(first) + '</strong>' + (rest ? ' ' + escapeHtml(rest) : '');
+}
+
 // Helper de rendu d'une card de feedback (badge + citation + filet + explication).
 function renderFeedbackCard({ leadClass, leadText, quote, explain, secondary }) {
   return `<div class="feedback-card ${leadClass} ${secondary ? 'is-secondary' : ''}">` +
     `<span class="lead ${leadClass}">${escapeHtml(leadText)}</span>` +
     `<div class="quote">« ${escapeHtml(quote)} »</div>` +
     `<div class="rule"></div>` +
-    `<div class="explain">${escapeHtml(explain)}</div>` +
+    `<div class="explain">${_boldifyFirstSentence(explain)}</div>` +
   `</div>`;
 }
 

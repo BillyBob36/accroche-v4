@@ -796,6 +796,8 @@ def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
 
 # ----------------- Nettoyage des tirets cadratins ---------------------
 
+import re as _re
+
 # Tirets visuellement encombrants à éliminer du wording. Le tiret HYPHEN
 # « - » court reste autorisé (trait d'union des mots composés).
 _DASH_PATTERNS = [
@@ -808,18 +810,26 @@ _DASH_PATTERNS = [
     ("—", ", "),
     ("–", ", "),
 ]
+# Range numérique « 20–30 » ou « 20 — 30 » → tiret simple « 20-30 »
+# (préserve la lisibilité d'une plage d'âges / ans / nombres).
+_RANGE_RE = _re.compile(r"(\d)\s*[—–]\s*(\d)")
 
 
 def _strip_em_dashes(s):
     """Remplace les tirets cadratins/demi-cadratins par des virgules pour
-    maintenir le flux syntaxique sans ce signe. Préserve les traits
-    d'union des mots composés (tiret simple `-` non touché)."""
+    maintenir le flux syntaxique sans ce signe. Cas spécial : un range
+    numérique (« 20–30 ans ») est converti en tiret simple (« 20-30 ans »)
+    plutôt qu'en virgule pour préserver la lecture en plage."""
     if not isinstance(s, str) or not s:
         return s
     out = s
+    # 1. Ranges numériques d'abord (avant que les patterns " — " ne
+    #    touchent les espaces autour).
+    out = _RANGE_RE.sub(r"\1-\2", out)
+    # 2. Remplacements généraux des tirets cadratins/demi-cadratins
     for pat, repl in _DASH_PATTERNS:
         out = out.replace(pat, repl)
-    # Nettoie les doubles espaces / virgules en cascade créées par le replace
+    # 3. Nettoie les doubles espaces / virgules en cascade créées
     while ",  " in out:
         out = out.replace(",  ", ", ")
     while ", ," in out:
@@ -829,10 +839,18 @@ def _strip_em_dashes(s):
 
 def cleanup_em_dashes_in_scenes() -> dict:
     """Parcourt TOUS les meta.json des scènes et nettoie les tirets
-    cadratins dans : level1_questions (text/choices/explanation) +
-    quests (title/intro_text/dialogue_choices.text/dialogue_choices.explanation).
-    Backup automatique meta.json.pre-emdash.bak avant écriture.
-    Renvoie un rapport par scène."""
+    cadratins dans tous les champs FRANÇAIS user-facing :
+      - meta.name (nom de la scène, visible dans l'UI joueur)
+      - boxes[].subject, boxes[].description, boxes[]._description,
+        boxes[]._analysis.* (qui, situation, dynamique_groupe.*, resume)
+      - level1_questions[].text / choices / explanation
+      - quests[].title / intro_text / dialogue_choices[].text /
+        dialogue_choices[].explanation
+    EXCLU : image1_prompt, image2_prompt (techniques, en anglais, le
+    « — » y est un marqueur stylistique des prompts gpt-image qu'on
+    ne touche pas pour ne pas altérer la qualité d'image générée).
+    Backup meta.json.pre-emdash.bak créé UNIQUEMENT s'il n'existe pas
+    encore (préserve la version originale en cas de relance)."""
     report: dict = {}
     for scene_dir in SCENES.iterdir():
         if not scene_dir.is_dir():
@@ -841,10 +859,33 @@ def cleanup_em_dashes_in_scenes() -> dict:
         if not meta_path.exists():
             continue
         sid = scene_dir.name
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        original = meta_path.read_text(encoding="utf-8")
+        meta = json.loads(original)
         changes = 0
+        # Nom de la scène (titre humain visible)
+        nv = _strip_em_dashes(meta.get("name"))
+        if nv != meta.get("name"): meta["name"] = nv; changes += 1
+        # Cadres : subject + description visible + _description vision +
+        # _analysis (qui/situation/dynamique_groupe/resume)
+        for b in (meta.get("boxes") or []):
+            for k in ("subject", "description", "_description"):
+                nv = _strip_em_dashes(b.get(k))
+                if nv != b.get(k): b[k] = nv; changes += 1
+            a = b.get("_analysis")
+            if isinstance(a, dict):
+                nv = _strip_em_dashes(a.get("resume"))
+                if nv != a.get("resume"): a["resume"] = nv; changes += 1
+                for p in (a.get("personnages") or []):
+                    for k in ("qui", "situation"):
+                        nv = _strip_em_dashes(p.get(k))
+                        if nv != p.get(k): p[k] = nv; changes += 1
+                dyn = a.get("dynamique_groupe")
+                if isinstance(dyn, dict):
+                    for k in list(dyn.keys()):
+                        nv = _strip_em_dashes(dyn.get(k))
+                        if nv != dyn.get(k): dyn[k] = nv; changes += 1
         # N1 questions
-        for q in meta.get("level1_questions", []) or []:
+        for q in (meta.get("level1_questions") or []):
             new_text = _strip_em_dashes(q.get("text"))
             if new_text != q.get("text"): q["text"] = new_text; changes += 1
             new_choices = []
@@ -856,7 +897,7 @@ def cleanup_em_dashes_in_scenes() -> dict:
             new_expl = _strip_em_dashes(q.get("explanation"))
             if new_expl != q.get("explanation"): q["explanation"] = new_expl; changes += 1
         # N2 quests
-        for qu in meta.get("quests", []) or []:
+        for qu in (meta.get("quests") or []):
             for k in ("title", "intro_text"):
                 nv = _strip_em_dashes(qu.get(k))
                 if nv != qu.get(k): qu[k] = nv; changes += 1
@@ -866,7 +907,8 @@ def cleanup_em_dashes_in_scenes() -> dict:
                     if nv != c.get(k): c[k] = nv; changes += 1
         if changes:
             backup = meta_path.with_suffix(".json.pre-emdash.bak")
-            backup.write_text(meta_path.read_text(encoding="utf-8"), encoding="utf-8")
+            if not backup.exists():
+                backup.write_text(original, encoding="utf-8")
             meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         report[sid] = {"changes": changes}
     return report

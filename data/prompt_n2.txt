@@ -44,6 +44,14 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
 4. « C'est pour offrir ? » — présume le motif, intrusif.
 5. « Vous cherchez quelque chose en particulier ? » — oblige à se justifier.
 
+## RÈGLES TYPOGRAPHIQUES GLOBALES (toutes les sorties)
+- INTERDIT d'utiliser le tiret cadratin « — » ou demi-cadratin « – »
+  dans AUCUN champ (title, intro_text, dialogue_choices[*].text,
+  dialogue_choices[*].explanation). Utilise la virgule, le point, les
+  deux-points ou le point-virgule pour l'articulation des phrases.
+- Le tiret simple « - » reste autorisé uniquement comme trait d'union
+  d'un mot composé (ex: « rendez-vous », « peut-être »).
+
 ## RÈGLES DE FORME
 - `title` : 3-5 mots nominal, descriptif factuel (« Le couple hésitant »,
   « La cliente discrète »). PAS d'adjectif vague.
@@ -91,9 +99,13 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
     signale-le en priorité dans l'accroche.
 
   ## INTERDITS GLOBAUX SUR L'EXPLANATION
-  - PAS d'objet à 3 champs `{erreur, action, raison}` — STRING unique.
-  - PAS de markdown (`**`, `_`) ni HTML (`<strong>`, `<b>`) : le gras de
+  - PAS d'objet à 3 champs `{erreur, action, raison}`. STRING unique.
+  - PAS de markdown (`**`, `_`) ni HTML (`<strong>`, `<b>`). Le gras de
     la 1ère phrase est géré par le rendu côté player.
+  - PAS de tiret cadratin « — » ni demi-cadratin « – » nulle part. Tu
+    articules avec une virgule, un point, deux-points ou point-virgule.
+    Ex: « Plutôt que X, pensez à Y, vous gagnez Z » OU « Plutôt que X,
+    pensez à Y. Vous gagnez Z. » — JAMAIS « pensez à Y — vous gagnez Z ».
   - PAS d'accroche-slogan creuse (« Le diagnostic avant le tri. »,
     « Sur mesure plutôt qu'assortiment. »). Si la 1ère phrase ne tient
     pas debout en autonomie et ne porte pas un conseil net, c'est qu'elle
@@ -107,23 +119,25 @@ de TRÈS BONS distracteurs (un débutant les choisit naturellement) :
   - Vouvoiement sobre (« vous », « votre »). JAMAIS de « tu ».
 
   ## EXEMPLES (à imiter le style, pas le contenu)
+  Note : aucun tiret cadratin dans les exemples. Articulation par virgule
+  ou point.
 
   Exemple is_best=true :
   « Question parfaitement calibrée pour la découverte. Vous interrogez
-  l'émotion et l'imaginaire plutôt que le produit — la cliente va
+  l'émotion et l'imaginaire plutôt que le produit, la cliente va
   exprimer ses attentes implicites, celles qui révèlent vraiment ses
   préférences. »
 
   Exemple is_best=false (choix binaire) :
   « Évitez le choix binaire en début de découverte. Plutôt que d'enfermer
   la cliente entre « léger » et « intense », pensez à laisser ses besoins
-  s'exprimer librement — les binaires sont utiles une fois le contexte
+  s'exprimer librement. Les binaires sont utiles une fois le contexte
   établi, pas avant. »
 
   Exemple is_best=false (intrusif) :
   « Restez sur le terrain du produit, pas de la vie privée. Plutôt que
   d'interroger son milieu professionnel, pensez à la situer dans son
-  quotidien et les moments où elle portera la pièce — l'envie se construit
+  quotidien et les moments où elle portera la pièce. L'envie se construit
   sur des occasions vécues, l'intrusion casse le lien. »
 - Distracteurs PLAUSIBLES, chacun avec un DÉFAUT DIFFÉRENT :
    trop générique / trop intrusif / trop commercial / trop effacé /

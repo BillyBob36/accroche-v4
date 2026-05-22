@@ -1241,6 +1241,29 @@ class Handler(SimpleHTTPRequestHandler):
             })
             return
 
+        # Cleanup global : retire le tiret cadratin « — » de tous les
+        # textes (meta.json des scènes + corpus RAG). Re-embed les entrées
+        # corpus modifiées si reembed=true (défaut). Idempotent. Backups
+        # .pre-emdash.bak créés avant toute écriture.
+        if path == "/api/cleanup-em-dashes":
+            payload = self._read_json() or {}
+            reembed = bool(payload.get("reembed", True))
+            try:
+                sys.path.insert(0, str(ROOT / "pipeline"))
+                from generate import (
+                    cleanup_em_dashes_in_scenes,
+                    cleanup_em_dashes_in_corpus,
+                )  # noqa
+                scenes_report = cleanup_em_dashes_in_scenes()
+                corpus_report = cleanup_em_dashes_in_corpus(reembed=reembed)
+            except Exception as e:
+                self._send_json(500, {"error": f"cleanup failed: {e}"}); return
+            self._send_json(200, {
+                "scenes": scenes_report,
+                "corpus": corpus_report,
+            })
+            return
+
         # Backfill des explications manquantes : pour chaque choix de
         # chaque quête de la scène dont `explanation` est vide, génère
         # une explication via GPT + RAG. Idempotent par défaut.

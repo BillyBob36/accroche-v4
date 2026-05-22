@@ -43,6 +43,13 @@ Tu reçois ci-dessous des questions passées notées par l'auteur sur des
 situations similaires. INSPIRE-TOI du ton, de la structure, du vocabulaire
 des questions ★. ÉVITE les patterns des questions ✗ ou ✦.
 
+## RÈGLES TYPOGRAPHIQUES GLOBALES (toutes les sorties)
+- INTERDIT d'utiliser le tiret cadratin « — » ou demi-cadratin « – »
+  dans AUCUN champ (text, choices[*], explanation). Utilise la virgule,
+  le point, les deux-points ou le point-virgule pour l'articulation.
+- Le tiret simple « - » reste autorisé uniquement comme trait d'union
+  d'un mot composé (ex: « rendez-vous », « peut-être »).
+
 ## RÈGLES DE FORME
 - Énoncé en 1 SEULE phrase, < 25 mots.
 - Verbe d'action ou interrogatif en début : « Quelle… », « Combien… »,

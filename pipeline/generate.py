@@ -705,10 +705,10 @@ def _explanation_user_msg(quest, choice, choice_idx, ctx_label, rag_block):
             "court (ex: « Sondez l'envie avant de parler vitrine. », "
             "« Évitez le choix binaire en début de découverte. »). "
             "Suite = articulée en « Plutôt que [défaut concret du choix], "
-            "pensez à [action recommandée] — [bénéfice métier en clôture] ». "
-            "Le tiret cadratin « — » sert d'articulation entre le conseil "
-            "et le bénéfice. Si HYPOTHÈSE non vérifiée → pointe-la. Si "
-            "INTRUSIF (vie privée/perso) → signale-le dans l'accroche."
+            "pensez à [action recommandée], [bénéfice métier en clôture] ». "
+            "Articulation par VIRGULE ou POINT (jamais par tiret cadratin). "
+            "Si HYPOTHÈSE non vérifiée → pointe-la. Si INTRUSIF (vie "
+            "privée/perso) → signale-le dans l'accroche."
         )
     return (
         f"CADRE / CONTEXTE :\n{ctx_label}\n\n"
@@ -768,10 +768,12 @@ def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
         "(Robin Lent). Tu rédiges une EXPLICATION qui sera affichée au joueur "
         "après son choix. Structure imposée : UN SEUL PARAGRAPHE en STRING, "
         "200-280 caractères (max 320), une seule ligne. La 1ère phrase est "
-        "courte et autonome — côté player elle est rendue automatiquement en "
+        "courte et autonome. Côté player, elle est rendue automatiquement en "
         "gras (le moteur coupe sur `. ! ? …`), donc PAS de markdown ni de "
-        "HTML dans le texte. Vouvoiement sobre. PAS de « tu ». PAS de jargon "
-        "de coach (« donne un cap », « partez de l'élan »…). PAS de jugement "
+        "HTML dans le texte. INTERDIT : tiret cadratin « — » ou demi-cadratin "
+        "« – ». Articule tes phrases avec une virgule, un point, deux-points "
+        "ou point-virgule. Vouvoiement sobre. PAS de « tu ». PAS de jargon "
+        "de coach (« donne un cap », « partez de l'élan »). PAS de jugement "
         "personnel (« votre erreur »). On parle du CHOIX, pas du vendeur. "
         "Inspire-toi du TON et de la STRUCTURE des exemples ★ du RAG, évite "
         "explicitement les patterns des ✗ / ✦."
@@ -790,6 +792,156 @@ def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
     if not expl:
         raise RuntimeError("GPT n'a pas renvoyé d'explication")
     return expl
+
+
+# ----------------- Nettoyage des tirets cadratins ---------------------
+
+# Tirets visuellement encombrants à éliminer du wording. Le tiret HYPHEN
+# « - » court reste autorisé (trait d'union des mots composés).
+_DASH_PATTERNS = [
+    # tiret cadratin entouré d'espaces (le pattern dominant produit par
+    # GPT quand on lui demandait « pensez à X — bénéfice »)
+    (" — ", ", "),
+    (" – ", ", "),
+    (" -- ", ", "),
+    # même chose en bord de phrase sans espace gauche/droite
+    ("—", ", "),
+    ("–", ", "),
+]
+
+
+def _strip_em_dashes(s):
+    """Remplace les tirets cadratins/demi-cadratins par des virgules pour
+    maintenir le flux syntaxique sans ce signe. Préserve les traits
+    d'union des mots composés (tiret simple `-` non touché)."""
+    if not isinstance(s, str) or not s:
+        return s
+    out = s
+    for pat, repl in _DASH_PATTERNS:
+        out = out.replace(pat, repl)
+    # Nettoie les doubles espaces / virgules en cascade créées par le replace
+    while ",  " in out:
+        out = out.replace(",  ", ", ")
+    while ", ," in out:
+        out = out.replace(", ,", ",")
+    return out
+
+
+def cleanup_em_dashes_in_scenes() -> dict:
+    """Parcourt TOUS les meta.json des scènes et nettoie les tirets
+    cadratins dans : level1_questions (text/choices/explanation) +
+    quests (title/intro_text/dialogue_choices.text/dialogue_choices.explanation).
+    Backup automatique meta.json.pre-emdash.bak avant écriture.
+    Renvoie un rapport par scène."""
+    report: dict = {}
+    for scene_dir in SCENES.iterdir():
+        if not scene_dir.is_dir():
+            continue
+        meta_path = scene_dir / "meta.json"
+        if not meta_path.exists():
+            continue
+        sid = scene_dir.name
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        changes = 0
+        # N1 questions
+        for q in meta.get("level1_questions", []) or []:
+            new_text = _strip_em_dashes(q.get("text"))
+            if new_text != q.get("text"): q["text"] = new_text; changes += 1
+            new_choices = []
+            for c in (q.get("choices") or []):
+                nc = _strip_em_dashes(c)
+                if nc != c: changes += 1
+                new_choices.append(nc)
+            q["choices"] = new_choices
+            new_expl = _strip_em_dashes(q.get("explanation"))
+            if new_expl != q.get("explanation"): q["explanation"] = new_expl; changes += 1
+        # N2 quests
+        for qu in meta.get("quests", []) or []:
+            for k in ("title", "intro_text"):
+                nv = _strip_em_dashes(qu.get(k))
+                if nv != qu.get(k): qu[k] = nv; changes += 1
+            for c in (qu.get("dialogue_choices") or []):
+                for k in ("text", "explanation"):
+                    nv = _strip_em_dashes(c.get(k))
+                    if nv != c.get(k): c[k] = nv; changes += 1
+        if changes:
+            backup = meta_path.with_suffix(".json.pre-emdash.bak")
+            backup.write_text(meta_path.read_text(encoding="utf-8"), encoding="utf-8")
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        report[sid] = {"changes": changes}
+    return report
+
+
+def cleanup_em_dashes_in_corpus(reembed: bool = True) -> dict:
+    """Parcourt corrections_n{1,2}.jsonl : pour chaque entrée, nettoie
+    les tirets cadratins dans les champs textuels (content, note,
+    rating_label, qui, situation, question, quest_title, intro_text,
+    explanation, answer). Re-calcule l'embedding si reembed=True (sinon
+    le vecteur garde sa valeur, ce qui dégrade légèrement le matching
+    cosinus mais évite les appels Azure).
+    Backup .pre-emdash.bak créé avant réécriture.
+    Le mirroir .txt N'EST PAS retouché (append-only, source non
+    canonique pour le RAG)."""
+    from _rag import embed_text, _build_embed_input  # noqa
+    report: dict = {}
+    for level in (1, 2):
+        p = DATA / f"corrections_n{level}.jsonl"
+        if not p.exists():
+            report[level] = {"file": p.name, "exists": False}
+            continue
+        lines = p.read_text(encoding="utf-8").splitlines()
+        new_lines: list[str] = []
+        changed = 0
+        reembedded = 0
+        text_fields = ("content", "note", "rating_label", "qui", "situation",
+                       "approche_orientation", "question", "quest_title",
+                       "intro_text", "explanation", "answer", "_embed_input")
+        for raw in lines:
+            s = raw.strip()
+            if not s:
+                continue
+            try:
+                e = json.loads(s)
+            except json.JSONDecodeError:
+                new_lines.append(raw)
+                continue
+            dirty = False
+            for k in text_fields:
+                v = e.get(k)
+                if isinstance(v, str):
+                    nv = _strip_em_dashes(v)
+                    if nv != v:
+                        e[k] = nv
+                        dirty = True
+            # Aussi dans dynamique_groupe (dict de strings)
+            dyn = e.get("dynamique_groupe")
+            if isinstance(dyn, dict):
+                for k in list(dyn.keys()):
+                    v = dyn[k]
+                    if isinstance(v, str):
+                        nv = _strip_em_dashes(v)
+                        if nv != v:
+                            dyn[k] = nv
+                            dirty = True
+            if dirty:
+                changed += 1
+                if reembed:
+                    new_input = _build_embed_input(e)
+                    e["_embed_input"] = new_input
+                    new_emb = embed_text(new_input)
+                    if new_emb is not None:
+                        e["embedding"] = new_emb
+                        reembedded += 1
+            new_lines.append(json.dumps(e, ensure_ascii=False))
+        if changed:
+            backup = p.with_suffix(".jsonl.pre-emdash.bak")
+            backup.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+            p.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        report[level] = {
+            "file": p.name, "total_entries": len(lines),
+            "modified": changed, "reembedded": reembedded,
+        }
+    return report
 
 
 def backfill_quest_explanations(scene_id: str, force: bool = False) -> dict:

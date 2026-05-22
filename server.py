@@ -1243,10 +1243,15 @@ class Handler(SimpleHTTPRequestHandler):
 
         # Backfill des explications manquantes : pour chaque choix de
         # chaque quête de la scène dont `explanation` est vide, génère
-        # une explication via GPT + RAG. Idempotent.
+        # une explication via GPT + RAG. Idempotent par défaut.
+        # Param optionnel `force` : régénère TOUTES les explanations
+        # (y compris celles déjà remplies). Usage : changement de doctrine
+        # éditoriale qui demande à re-formater l'existant. Un backup
+        # meta.json.pre-regen-tips.bak est créé avant toute écriture.
         if path == "/api/backfill-explanations":
             payload = self._read_json() or {}
             scene_ids = payload.get("scene_ids")
+            force = bool(payload.get("force"))
             if not isinstance(scene_ids, list) or not scene_ids:
                 self._send_json(400, {"error": "scene_ids (liste) requis"}); return
             try:
@@ -1255,7 +1260,7 @@ class Handler(SimpleHTTPRequestHandler):
                 reports = {}
                 for sid in scene_ids:
                     try:
-                        reports[sid] = backfill_quest_explanations(sid)
+                        reports[sid] = backfill_quest_explanations(sid, force=force)
                     except Exception as e:
                         reports[sid] = {"error": str(e)}
             except Exception as e:

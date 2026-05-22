@@ -792,16 +792,25 @@ def generate_explanation_for_choice(scene_id, quest, choice_idx) -> str:
     return expl
 
 
-def backfill_quest_explanations(scene_id: str) -> dict:
+def backfill_quest_explanations(scene_id: str, force: bool = False) -> dict:
     """Pour chaque choix de chaque quête de la scène dont `explanation`
     est vide, génère une explication via GPT+RAG et la sauve dans
-    meta.quests. Idempotent : skip les choix déjà remplis.
+    meta.quests. Idempotent par défaut (skip les choix remplis).
+
+    Si `force=True` : régénère TOUS les choix, y compris ceux dont
+    l'explanation est déjà remplie. Cas d'usage rare (typiquement un
+    changement de doctrine éditoriale qui demande à re-formater l'existant).
+    Un backup .pre-regen-tips.bak du meta.json est créé AVANT toute écriture.
 
     Renvoie un rapport { quest_id: { choice_idx: 'ok' | 'skip' | 'error' } }.
     """
     base = SCENES / scene_id
     meta_path = base / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    # Backup AVANT toute modif (en cas de rollback nécessaire après regen)
+    backup_path = meta_path.with_suffix(".json.pre-regen-tips.bak")
+    backup_path.write_text(meta_path.read_text(encoding="utf-8"), encoding="utf-8")
+
     report: dict = {}
     n_filled = 0
     n_skipped = 0
@@ -811,14 +820,15 @@ def backfill_quest_explanations(scene_id: str) -> dict:
         rep = {}
         choices = quest.get("dialogue_choices") or []
         for i, c in enumerate(choices):
-            if (c.get("explanation") or "").strip():
+            has_expl = bool((c.get("explanation") or "").strip())
+            if has_expl and not force:
                 rep[str(i)] = "skip"
                 n_skipped += 1
                 continue
             try:
                 expl = generate_explanation_for_choice(scene_id, quest, i)
                 c["explanation"] = expl
-                rep[str(i)] = "ok"
+                rep[str(i)] = "regen" if has_expl else "ok"
                 n_filled += 1
             except Exception as e:
                 rep[str(i)] = f"error: {e}"
@@ -832,6 +842,8 @@ def backfill_quest_explanations(scene_id: str) -> dict:
         "filled": n_filled,
         "skipped": n_skipped,
         "errors": n_errors,
+        "forced": bool(force),
+        "backup": str(backup_path.relative_to(SCENES.parent)),
         "details": report,
     }
 

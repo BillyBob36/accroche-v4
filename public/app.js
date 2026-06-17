@@ -3021,6 +3021,14 @@ const MIN_PIXELS = 655_360;
 const MAX_PIXELS = 8_294_400;
 const MAX_LONG = 3840;
 const MAX_RATIO_CHAR = 3.0;
+// Plancher de TRACÉ dans l'éditeur (≠ MIN_PIXELS de l'API). gpt-image-2 exige
+// ≥ MIN_PIXELS, mais le backend (extract_box_input → snap_aspect) redimensionne
+// TOUJOURS le crop vers une taille API valide, quelle que soit la taille du
+// cadre en coords master. Donc on n'a PAS besoin d'imposer MIN_PIXELS au tracé.
+// On garde juste un plancher raisonnable (~1/4 de l'aire min) pour éviter les
+// micro-cadres dessinés par accident qui seraient upscalés de façon extrême.
+// → permet de cadrer une personne seule (≈ 405×405 ou 330×495 en 2:3).
+const EDITOR_MIN_PIXELS = Math.round(MIN_PIXELS / 4);  // 163 840 px
 
 const charState = {
   rect: null,         // {x,y,w,h} en master coords (toujours snappés à 16)
@@ -3163,15 +3171,17 @@ function clampCharRect(x, y, w, h) {
     w *= f; h *= f;
   }
 
-  // 4. Total pixels ≥ MIN_PIXELS — c'est ICI qu'on grandit, en préservant le
-  //    ratio (donc sans aucune déformation), pour que le cadre soit toujours
-  //    accepté par gpt-image-2.
-  if (w * h < MIN_PIXELS) {
-    const f = Math.sqrt(MIN_PIXELS / (w * h));
+  // 4. Total pixels ≥ EDITOR_MIN_PIXELS — c'est ICI qu'on grandit, en
+  //    préservant le ratio (sans aucune déformation). On utilise le plancher
+  //    ÉDITEUR (≈ 1/4 du min API), pas MIN_PIXELS : le backend redimensionne
+  //    de toute façon le crop vers une taille API valide, donc un cadre plus
+  //    petit est parfaitement accepté. → permet de tracer plus serré.
+  if (w * h < EDITOR_MIN_PIXELS) {
+    const f = Math.sqrt(EDITOR_MIN_PIXELS / (w * h));
     w *= f; h *= f;
   }
 
-  // 5. Cap par les bornes du master (peut nous re-faire passer sous MIN_PIXELS
+  // 5. Cap par les bornes du master (peut nous re-faire passer sous le seuil
   //    si le master est très petit ; à ce stade c'est le mieux possible).
   if (w > MASTER_W) { const f = MASTER_W / w; w *= f; h *= f; }
   if (h > MASTER_H) { const f = MASTER_H / h; w *= f; h *= f; }
@@ -3180,10 +3190,10 @@ function clampCharRect(x, y, w, h) {
   w = Math.min(MASTER_W, ceil16(w));
   h = Math.min(MASTER_H, ceil16(h));
 
-  // 7. Si le snap nous a remis sous MIN_PIXELS (rare, p.ex. après cap master),
-  //    on grossit du côté qui a le plus de marge, par paliers de 16.
+  // 7. Si le snap nous a remis sous le plancher éditeur (rare, p.ex. après cap
+  //    master), on grossit du côté qui a le plus de marge, par paliers de 16.
   let safety = 0;
-  while (w * h < MIN_PIXELS && safety++ < 64) {
+  while (w * h < EDITOR_MIN_PIXELS && safety++ < 64) {
     const marginW = MASTER_W - w, marginH = MASTER_H - h;
     if (w <= h && marginW >= SNAP) w += SNAP;
     else if (marginH >= SNAP) h += SNAP;

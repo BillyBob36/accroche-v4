@@ -57,16 +57,46 @@ EXTRACT_THRESHOLD = 90  # min "magenta-shift score" for a pixel to count as draw
 
 
 def build_prompt(subject: str) -> str:
-    target = subject.strip() if subject and subject.strip() else "the person(s) in this photograph"
+    subj = subject.strip() if subject and subject.strip() else ""
+    if subj:
+        # Le sujet est saisi par l'auteur, souvent en FRANÇAIS. On le délimite
+        # clairement et on insiste : tracer UNIQUEMENT ce sujet, et laisser
+        # toute autre personne/objet du cadre intact (le cadre rectangulaire
+        # inclut souvent des personnes voisines qu'il ne faut PAS tracer).
+        target_clause = (
+            f'tracing the visible contour of ONLY this specific subject (description '
+            f'may be in French): « {subj} ». Identify the matching person(s) in the '
+            f'photograph and trace ONLY them.'
+        )
+        exclusion_block = (
+            "CRITICAL — TRACE ONLY THE NAMED SUBJECT ABOVE, NOBODY ELSE.\n"
+            "If the photograph contains OTHER people (e.g. someone standing at the "
+            "edge, in the background, or beside the subject), salespeople, hands that "
+            "do not belong to the subject, mannequins, furniture, glass display cases, "
+            "handbags, products, or ANY element that is NOT part of the named subject, "
+            "you MUST leave them 100% UNTOUCHED — absolutely NO magenta line on them, "
+            "not even a small segment. The magenta line appears on the named subject "
+            "and on NOTHING ELSE in the entire image.\n\n"
+        )
+    else:
+        target_clause = (
+            "tracing the visible contour of the main human subject(s) in this photograph"
+        )
+        exclusion_block = (
+            "Trace ONLY the human subject(s). Leave furniture, glass display cases, "
+            "handbags, products and all background objects 100% untouched — no magenta "
+            "line on them.\n\n"
+        )
     return (
         "I am sending you a photograph. Your task: DRAW DIRECTLY ON TOP of this exact "
         "photograph, ON the existing pixels. DO NOT redraw the photo. DO NOT modify, "
         "remove, or recolor anything in the photograph itself.\n\n"
         f"Add ONLY a thin pure MAGENTA ink line ({DRAW_COLOR_HEX}, RGB 255,0,255) "
-        f"tracing the visible contour of {target}. Place the line directly on the "
+        f"{target_clause} Place the line directly on the "
         "photograph, exactly along the body silhouette — head, shoulders, arms, torso, "
         "hands, legs, feet — pixel-for-pixel along the boundary between body and "
         "background, sitting on top of the existing photographic pixels.\n\n"
+        + exclusion_block +
         "STYLE: ONE uninterrupted thin uniform magenta line (~3-4 pixels wide), drawn "
         "without lifting the pen, looping back, crossing and overlapping itself. "
         "Picasso / Jean Cocteau / Henri Matisse single-line fashion sketch. Smooth "
@@ -76,8 +106,9 @@ def build_prompt(subject: str) -> str:
         "texture, NO fabric folds, NO buttons, NO patterns, NO hair strand details. "
         "NO hatching, NO halftone.\n\n"
         "OUTPUT: the EXACT same photograph with ONLY the magenta tracing line added on "
-        "top. The photographic content underneath the line must remain 100% unchanged "
-        "in color, lighting, framing, position, and scale."
+        "top (and the line must cover ONLY the named subject). The photographic content "
+        "underneath the line must remain 100% unchanged in color, lighting, framing, "
+        "position, and scale."
     )
 
 

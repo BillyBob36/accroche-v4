@@ -664,6 +664,12 @@ function selectBox(id) {
   $('box-aspect-display').textContent = aspectDisplay(b);
   // Hint résumé du select Quête (visible dans le summary fermé)
   refreshBoxQuestSummaryHint();
+  // Lien debug du cadre courant. On NE passe PAS de scene= : l'éditeur
+  // travaille sur public/ (copie de travail active), et le debug sans
+  // scene= lit exactement ce public/ → reflète l'état LIVE que tu vois
+  // (cadres re-tracés + derniers crops), pas la version scène resnappée.
+  const dbg = $('debug-box-link');
+  if (dbg) dbg.href = `/debug.html?box=${encodeURIComponent(id)}`;
   $('box-panel').classList.add('shown');
 }
 

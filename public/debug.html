@@ -260,6 +260,27 @@ async function loadDebug(boxId, sceneId) {
   // plus petit que raw.png (c'est la sous-zone du rect user dans le crop GPT
   // élargi). Donc on ne crie PAS au loup pour ça.
   let warnings = [];
+  // ⚠ STALENESS #1 — le crop envoyé à GPT (geom.crop_in_master) ne correspond
+  // PLUS au cadre actuel (box). C'est LE cas le plus fréquent : on a re-tracé
+  // le cadre mais pas régénéré → les renders montrent l'ancienne zone.
+  let stale = false;
+  if (box && geom && geom.crop_in_master) {
+    const c = geom.crop_in_master;
+    const dx = Math.abs(c.x - box.x), dy = Math.abs(c.y - box.y);
+    const dw = Math.abs(c.w - box.w), dh = Math.abs(c.h - box.h);
+    if (dx > 2 || dy > 2 || dw > 2 || dh > 2) {
+      stale = true;
+      warnings.push('🔴 CROP STALE — le geom (' + fmtRect(c) + ') ≠ cadre actuel ('
+        + fmtRect(box) + '). Le rendu montre l\'ANCIENNE zone. RÉGÉNÈRE ce cadre.');
+    }
+  }
+  // ⚠ STALENESS #2 — aucun crop du tout (cadre jamais généré).
+  if (box && !a.input.exists) {
+    stale = true;
+    warnings.push('🔴 AUCUN CROP — ce cadre n\'a jamais été généré. Régénère-le.');
+  }
+  // ⚠ STALENESS #3 — input.png plus vieux qu'un re-traçage probable : on ne
+  // peut pas comparer au mtime des boxes ici, mais le #1 couvre le cas réel.
   if (geom && a.input.real_size) {
     const t = geom.target_size;
     const i = a.input.real_size;
@@ -301,7 +322,16 @@ async function loadDebug(boxId, sceneId) {
   const masterW = master.real_size ? master.real_size.w : 2560;
   const masterH = master.real_size ? master.real_size.h : 1440;
 
-  // Composite 1 : master avec rect user en rouge
+  // Composite 1 : master avec rect user (rouge) ET, si le crop est stale,
+  // la zone réellement envoyée à GPT (orange pointillé). Le décalage entre
+  // les deux saute alors aux yeux.
+  const gcm = geom && geom.crop_in_master;
+  const staleRect = (stale && gcm) ? `
+        <rect x="${gcm.x}" y="${gcm.y}" width="${gcm.w}" height="${gcm.h}"
+              fill="rgba(255, 170, 40, 0.12)" stroke="rgb(255, 170, 40)" stroke-width="3"
+              stroke-dasharray="14 8" vector-effect="non-scaling-stroke"/>
+        <text x="${gcm.x + 12}" y="${gcm.y + 36}" fill="rgb(255,200,120)" stroke="black" stroke-width="0.5"
+              font-family="system-ui" font-size="32" font-weight="600">zone réellement envoyée</text>` : '';
   const composite1 = box ? `
     <div class="composite">
       <img class="master" src="${masterUrl}">
@@ -311,8 +341,11 @@ async function loadDebug(boxId, sceneId) {
               vector-effect="non-scaling-stroke"/>
         <text x="${box.x + 12}" y="${box.y + 36}" fill="white" stroke="black" stroke-width="0.5"
               font-family="system-ui" font-size="36" font-weight="500">Cadre ${box.id}</text>
+        ${staleRect}
       </svg>
-      <div class="legend"><span class="swatch" style="background:rgb(255,80,80)"></span>Rect user dans le master</div>
+      <div class="legend">
+        <span class="swatch" style="background:rgb(255,80,80)"></span>Cadre actuel${staleRect ? '<br><span class="swatch" style="background:rgb(255,170,40)"></span>Zone réellement envoyée à GPT (stale)' : ''}
+      </div>
     </div>` : '<div class="empty">Box introuvable</div>';
 
   // Composite 2 : master avec SVG skel superposé
@@ -323,7 +356,18 @@ async function loadDebug(boxId, sceneId) {
       <div class="legend"><span class="swatch" style="background:white"></span>SVG skel — devrait être collé au sujet</div>
     </div>` : '<div class="empty">Pas de skel SVG disponible</div>';
 
-  root.innerHTML = `
+  const staleBanner = stale ? `
+    <div style="background:rgba(255,80,80,0.14);border:1px solid rgba(255,80,80,0.6);border-radius:10px;padding:14px 18px;margin-bottom:18px;color:rgb(255,180,180);font-size:14px;line-height:1.5;">
+      <strong style="color:rgb(255,120,120);font-size:15px;">🔴 Ce cadre est STALE</strong><br>
+      La zone réellement envoyée à GPT (et donc le rendu affiché) ne correspond
+      plus au cadre que tu as tracé. Tu as re-tracé le cadre mais les images /
+      dessins n'ont pas été régénérés. <strong>Solution :</strong> retourne dans
+      l'éditeur, sélectionne ce cadre, et clique « ↻ Régénérer la sélection »
+      (coche Image zoom 1, Image zoom 2 et Dessin). Reviens ensuite ici pour
+      vérifier que le cadre rouge et la zone orange se superposent.
+    </div>` : '';
+
+  root.innerHTML = staleBanner + `
     <div class="grid">
       <div class="panel wide">
         <h2><span class="step">0</span>Métadonnées</h2>

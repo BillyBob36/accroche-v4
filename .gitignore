@@ -37,3 +37,4 @@ yolo11n-seg.pt
 # restent versionnés ; les sorties brutes du pipeline sont éphémères et lourdes,
 # elles seront régénérées quand on cliquera sur « Régénérer la scène »)
 # On garde quand même les modules + master + assets pour démarrer en marche.
+.lineart-test/

@@ -57,58 +57,57 @@ EXTRACT_THRESHOLD = 90  # min "magenta-shift score" for a pixel to count as draw
 
 
 def build_prompt(subject: str) -> str:
+    # Prompt 100% FRANÇAIS : gagnant du banc d'essai A/B (10 variantes testées
+    # sur la même image). Donne le trait le plus net « Cocteau/Matisse » ET la
+    # meilleure adhérence au sujet nommé. Le sujet est saisi par l'auteur (en
+    # français) ; on le délimite clairement et on exclut explicitement toute
+    # autre personne/objet du crop (le cadre rectangulaire inclut souvent des
+    # voisins qu'il ne faut PAS tracer).
     subj = subject.strip() if subject and subject.strip() else ""
     if subj:
-        # Le sujet est saisi par l'auteur, souvent en FRANÇAIS. On le délimite
-        # clairement et on insiste : tracer UNIQUEMENT ce sujet, et laisser
-        # toute autre personne/objet du cadre intact (le cadre rectangulaire
-        # inclut souvent des personnes voisines qu'il ne faut PAS tracer).
-        target_clause = (
-            f'tracing the visible contour of ONLY this specific subject (description '
-            f'may be in French): « {subj} ». Identify the matching person(s) in the '
-            f'photograph and trace ONLY them.'
+        cible = (
+            f"qui trace le contour de : « {subj} ». Identifie cette ou ces "
+            f"personne(s) dans la photo et trace SEULEMENT elle(s)."
         )
-        exclusion_block = (
-            "CRITICAL — TRACE ONLY THE NAMED SUBJECT ABOVE, NOBODY ELSE.\n"
-            "If the photograph contains OTHER people (e.g. someone standing at the "
-            "edge, in the background, or beside the subject), salespeople, hands that "
-            "do not belong to the subject, mannequins, furniture, glass display cases, "
-            "handbags, products, or ANY element that is NOT part of the named subject, "
-            "you MUST leave them 100% UNTOUCHED — absolutely NO magenta line on them, "
-            "not even a small segment. The magenta line appears on the named subject "
-            "and on NOTHING ELSE in the entire image.\n\n"
+        exclusion = (
+            "CRUCIAL : ne trace PERSONNE NI RIEN D'AUTRE. S'il y a d'autres "
+            "personnes dans l'image (au bord, au fond, ou juste à côté du sujet), "
+            "des vendeurs, des mains qui ne sont pas celles du sujet, des "
+            "mannequins, du mobilier, des vitrines, des sacs ou des produits, "
+            "laisse-les 100% INTACTS — aucun trait magenta dessus, pas même un "
+            "petit segment. Le trait magenta apparaît UNIQUEMENT sur le sujet "
+            "nommé, sur rien d'autre dans toute l'image."
         )
     else:
-        target_clause = (
-            "tracing the visible contour of the main human subject(s) in this photograph"
+        cible = (
+            "qui trace le contour de la ou des personne(s) principale(s) de la photo."
         )
-        exclusion_block = (
-            "Trace ONLY the human subject(s). Leave furniture, glass display cases, "
-            "handbags, products and all background objects 100% untouched — no magenta "
-            "line on them.\n\n"
+        exclusion = (
+            "Ne trace QUE le ou les sujet(s) humain(s). Laisse le mobilier, les "
+            "vitrines, les sacs, les produits et tout l'arrière-plan 100% intacts — "
+            "aucun trait magenta dessus."
         )
     return (
-        "I am sending you a photograph. Your task: DRAW DIRECTLY ON TOP of this exact "
-        "photograph, ON the existing pixels. DO NOT redraw the photo. DO NOT modify, "
-        "remove, or recolor anything in the photograph itself.\n\n"
-        f"Add ONLY a thin pure MAGENTA ink line ({DRAW_COLOR_HEX}, RGB 255,0,255) "
-        f"{target_clause} Place the line directly on the "
-        "photograph, exactly along the body silhouette — head, shoulders, arms, torso, "
-        "hands, legs, feet — pixel-for-pixel along the boundary between body and "
-        "background, sitting on top of the existing photographic pixels.\n\n"
-        + exclusion_block +
-        "STYLE: ONE uninterrupted thin uniform magenta line (~3-4 pixels wide), drawn "
-        "without lifting the pen, looping back, crossing and overlapping itself. "
-        "Picasso / Jean Cocteau / Henri Matisse single-line fashion sketch. Smooth "
-        "flowing organic curves. Many curves LEFT OPEN, terminating mid-air in elegant "
-        "tapers. Pure saturated magenta only — no other ink colors, no shading, no fill.\n\n"
-        "STRICT EXCLUSIONS: NO facial features detail (no eyes, mouth, nose). NO clothing "
-        "texture, NO fabric folds, NO buttons, NO patterns, NO hair strand details. "
-        "NO hatching, NO halftone.\n\n"
-        "OUTPUT: the EXACT same photograph with ONLY the magenta tracing line added on "
-        "top (and the line must cover ONLY the named subject). The photographic content "
-        "underneath the line must remain 100% unchanged in color, lighting, framing, "
-        "position, and scale."
+        "Je t'envoie une photographie. DESSINE DIRECTEMENT PAR-DESSUS, sur les "
+        "pixels existants. NE REDESSINE PAS la photo, ne la modifie pas, ne change "
+        "ni les couleurs ni le cadrage.\n\n"
+        f"Ajoute UNIQUEMENT un fin trait MAGENTA pur ({DRAW_COLOR_HEX}, RVB 255,0,255) "
+        f"{cible} Pose le trait directement sur la photo, le long de la silhouette "
+        "du corps (tête, épaules, bras, torse, mains, jambes, pieds), pile sur la "
+        "frontière entre le corps et le fond, par-dessus les pixels existants.\n\n"
+        f"{exclusion}\n\n"
+        "STYLE : un SEUL trait continu, fin et régulier (~3-4 px de large), tracé "
+        "sans lever le crayon, qui boucle et se croise. Dessin à la ligne unique "
+        "style Picasso / Cocteau / Matisse. Courbes organiques fluides, beaucoup "
+        "LAISSÉES OUVERTES, se terminant en l'air en effilés élégants. Magenta "
+        "saturé pur uniquement, aucune autre couleur, aucun ombrage, aucun "
+        "remplissage.\n\n"
+        "EXCLUSIONS STRICTES : AUCUN détail de visage (ni yeux, ni bouche, ni nez). "
+        "AUCUNE texture de vêtement, AUCUN pli, AUCUN bouton, AUCUN motif, AUCUN "
+        "détail de cheveux. AUCUN hachurage.\n\n"
+        "SORTIE : la photographie EXACTE et inchangée (couleurs, lumière, cadrage, "
+        "position, échelle), avec SEULEMENT le trait magenta ajouté par-dessus, et "
+        "ce trait ne couvre QUE le sujet nommé."
     )
 
 

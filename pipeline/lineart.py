@@ -202,15 +202,37 @@ def extract_lines_from_overlay(box: dict) -> Path:
             f"(box id={box_id}) — extract_box_input must run first or was wiped"
         )
 
+    # Sécurité : on efface l'éventuel line.png précédent (vestige d'une
+    # régénération partielle).
+    try: line_path.unlink(missing_ok=True)
+    except OSError: pass
+
     raw = np.array(Image.open(raw_path).convert("RGB")).astype(np.int16)
     original_img = Image.open(original_path).convert("RGB")
     if original_img.size != (raw.shape[1], raw.shape[0]):
         original_img = original_img.resize((raw.shape[1], raw.shape[0]), Image.LANCZOS)
     original = np.array(original_img).astype(np.int16)
 
-    diff = raw - original                     # per-channel signed shift
-    score = diff[..., 0] - diff[..., 1] + diff[..., 2]  # shift toward (255,0,255)
-    is_drawn = score > EXTRACT_THRESHOLD
+    # FILTRE MAGENTA STRICT à deux critères (restauré de 42b623f, perdu lors
+    # du revert e2b655b). L'ancien filtre simple ne testait QUE le score signé
+    # (diff R-G+B > seuil). Or gpt-image-2 re-render TOUTE l'image (ce n'est PAS
+    # un overlay pixel-perfect) : des pixels NON-tracés (meubles, vitres, sol,
+    # reflets) dérivent de quelques unités et passaient le seuil → bruit de
+    # décor dans line.png, puis dans le squelette. On exige désormais :
+    #   1. is_magenta_color : la couleur FINALE est proche du magenta pur
+    #      (R élevé, G faible, B élevé) — élimine les dérives de teinte du décor.
+    #   2. is_shifted_to_magenta : le pixel a EFFECTIVEMENT viré au magenta
+    #      depuis l'original (R/B montés, G baissé) — ignore les pixels déjà
+    #      magenta dans la photo d'origine.
+    R, G, B = raw[..., 0], raw[..., 1], raw[..., 2]
+    is_magenta_color = (
+        (R > 180) & (G < 120) & (B > 180) & (R - G > 60) & (B - G > 60)
+    )
+    diff = raw - original
+    is_shifted_to_magenta = (
+        (diff[..., 0] > 30) & (diff[..., 1] < -10) & (diff[..., 2] > 30)
+    )
+    is_drawn = is_magenta_color & is_shifted_to_magenta
 
     h, w = is_drawn.shape
     out = np.full((h, w), 255, dtype=np.uint8)

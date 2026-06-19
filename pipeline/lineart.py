@@ -54,6 +54,10 @@ def _lineart_size_for_box(box: dict) -> tuple[int, int]:
 # is naturally pure magenta) so we can reliably detect it via image differencing.
 DRAW_COLOR_HEX = "#FF00FF"
 EXTRACT_THRESHOLD = 90  # min "magenta-shift score" for a pixel to count as drawn
+# Filtrage du décor par composantes connexes (étape 2 de extract_lines).
+# On garde une composante si sa taille ≥ max(MIN_CC_ABS, MIN_CC_FRAC × plus grosse).
+MIN_CC_ABS = 400     # plancher absolu en pixels (retire les micro-fragments)
+MIN_CC_FRAC = 0.05   # ou ≥ 5% de la plus grosse composante (= le contour des persos)
 
 
 def build_prompt(subject: str) -> str:
@@ -213,26 +217,36 @@ def extract_lines_from_overlay(box: dict) -> Path:
         original_img = original_img.resize((raw.shape[1], raw.shape[0]), Image.LANCZOS)
     original = np.array(original_img).astype(np.int16)
 
-    # FILTRE MAGENTA STRICT à deux critères (restauré de 42b623f, perdu lors
-    # du revert e2b655b). L'ancien filtre simple ne testait QUE le score signé
-    # (diff R-G+B > seuil). Or gpt-image-2 re-render TOUTE l'image (ce n'est PAS
-    # un overlay pixel-perfect) : des pixels NON-tracés (meubles, vitres, sol,
-    # reflets) dérivent de quelques unités et passaient le seuil → bruit de
-    # décor dans line.png, puis dans le squelette. On exige désormais :
-    #   1. is_magenta_color : la couleur FINALE est proche du magenta pur
-    #      (R élevé, G faible, B élevé) — élimine les dérives de teinte du décor.
-    #   2. is_shifted_to_magenta : le pixel a EFFECTIVEMENT viré au magenta
-    #      depuis l'original (R/B montés, G baissé) — ignore les pixels déjà
-    #      magenta dans la photo d'origine.
-    R, G, B = raw[..., 0], raw[..., 1], raw[..., 2]
-    is_magenta_color = (
-        (R > 180) & (G < 120) & (B > 180) & (R - G > 60) & (B - G > 60)
-    )
+    # ÉTAPE 1 — Filtre magenta SIMPLE (score signé). Il garde la ligne
+    # magenta COMPLÈTE et épaisse (y compris les pixels anti-aliasés autour
+    # du trait) → contours nets et continus. C'est ce filtre qui donnait les
+    # bons résultats (ex. maison-eclat). Son seul défaut : sur les scènes très
+    # réfléchissantes (vitrines, marbre, or), gpt-image-2 re-render l'image et
+    # fait dériver la couleur du décor, ce qui ajoutait du bruit. → corrigé à
+    # l'étape 2.
     diff = raw - original
-    is_shifted_to_magenta = (
-        (diff[..., 0] > 30) & (diff[..., 1] < -10) & (diff[..., 2] > 30)
-    )
-    is_drawn = is_magenta_color & is_shifted_to_magenta
+    score = diff[..., 0] - diff[..., 1] + diff[..., 2]   # shift vers (255,0,255)
+    is_drawn = score > EXTRACT_THRESHOLD
+
+    # ÉTAPE 2 — Suppression du décor par COMPOSANTES CONNEXES. Le contour des
+    # personnes forme une (ou quelques) grande(s) composante(s) connexe(s)
+    # épaisse(s) ; le bruit de décor = multitude de petits fragments épars.
+    # On ne garde que les composantes dont la taille ≥ max(MIN_CC_ABS,
+    # MIN_CC_FRAC × plus grosse). → retire le décor SANS amincir le trait.
+    # Sur les scènes déjà propres (maison-eclat) ça ne retire rien (0%).
+    try:
+        from scipy import ndimage  # dispo en prod (skeletonize l'utilise déjà)
+        lbl, n = ndimage.label(is_drawn, structure=np.ones((3, 3)))  # 8-connexité
+        if n > 0:
+            sizes = ndimage.sum(np.ones_like(lbl), lbl, index=np.arange(1, n + 1))
+            biggest = float(sizes.max())
+            thr = max(MIN_CC_ABS, MIN_CC_FRAC * biggest)
+            keep = np.where(sizes >= thr)[0] + 1
+            is_drawn = np.isin(lbl, keep)
+            print(f"[2.4/{box_id}] composantes connexes : {n} -> {len(keep)} gardées "
+                  f"(décor retiré)", flush=True)
+    except Exception as e:
+        print(f"[2.4/{box_id}] CC filter skipped: {e}", flush=True)
 
     h, w = is_drawn.shape
     out = np.full((h, w), 255, dtype=np.uint8)
